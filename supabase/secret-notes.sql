@@ -22,15 +22,16 @@ alter table public.secret_notes enable row level security;
 drop policy if exists "anon can read" on public.secret_notes;
 drop policy if exists "authenticated can read" on public.secret_notes;
 
--- 3) 현재 data.json의 가상 메모를 옮겨 담습니다(모두 실습용 가상 자료).
+-- 3) 가상 메모를 옮겨 담습니다. 메모 본문은 저장소 파일에 적지 않습니다.
+--    아래 템플릿의 <제목>·<내용>을 SQL Editor에서 본인 메모로 직접 채워 실행하세요.
 --    owner_id는 비워 둡니다(아직 소유자 연결 전).
 --    주의: 다시 실행하면 행이 중복 추가됩니다. 비우고 다시 넣으려면 아래 truncate 주석을 푸세요.
 -- truncate table public.secret_notes;
-insert into public.secret_notes (title, content) values
-  ('과제',          '실습용 가상 과제 기록'),
-  ('포트폴리오',     '실습용 가상 포트폴리오 기록'),
-  ('아침 리추얼',    '실습용 가상 리추얼 기록'),
-  ('훈련 행정 자료', '실습용 가상 행정 기록');
+-- insert into public.secret_notes (title, content) values
+--   ('<제목>', '<내용>'),
+--   ('<제목>', '<내용>'),
+--   ('<제목>', '<내용>'),
+--   ('<제목>', '<내용>');
 
 -- 4) 확인용 조회(이 창은 service_role 권한으로 실행되어 보입니다).
 --    브라우저 anon 키로는 RLS 때문에 빈 결과가 나와야 정상입니다.
