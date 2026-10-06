@@ -28,7 +28,13 @@
 
 **다시 실행하는 방법:** (1) Supabase SQL Editor에서 `supabase/secret-notes.sql` 실행 → `secret_notes`에 4건. (2) Vercel → Settings → Environment Variables에 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`(service_role) 넣고 Redeploy. (3) `git push origin main` 하면 자동 재배포. 로컬 정적 미리보기만 볼 때는 `npm run build -- --local`(서버 함수 `/api/*`는 실제 배포 또는 `vercel dev`에서만 동작).
 
-**남은 약점:** `api/notes.js`는 아직 공개 주소입니다. 로그인하지 않은 누구나 `/api/notes`를 직접 호출해 네 건을 그대로 받을 수 있습니다. 로그인과 접근 제한은 다음 단계에서 추가합니다.
+## 3단계 현재 상태
+
+화면에 Supabase Auth 이메일·비밀번호 로그인/로그아웃이 붙었고, 자료 API `/api/notes`는 요청의 `Authorization` 토큰을 틀의 `src/verify-login.mjs`로 검사합니다(브라우저가 보낸 `userId`·`role`은 신뢰하지 않음). 토큰이 없거나 검사에 실패하면 **401로 자료 없이 거부**하고, 정상 로그인만 메모 4건을 받습니다. 발급자 정보는 `aleph.config.json`의 `identityProvider`(`issuer`·`jwksUrl`·`audience`)에 있으며 **비밀 키는 없습니다**. 공개 publishable 키만 화면 코드에 있습니다.
+
+**다시 실행하는 방법(3단계):** Vercel 환경변수 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`(service_role)를 넣고 **재배포**해야 `/api/notes`가 동작합니다. 없으면 500 `NOTES_BACKEND_NOT_CONFIGURED`가 납니다. 로그인할 A 계정은 Supabase Authentication → Users에서 만듭니다.
+
+> 검증 메모: 코드·설정은 로컬 문법/`verifiedConfig` 검사를 통과했으나, 작성 시점의 실배포는 환경변수 미설정으로 `/api/notes`가 500이었습니다. 실배포 동작은 환경변수 반영·재배포 후 확인해야 합니다.
 
 ### 가상 메모 노출 확인 절차
 
