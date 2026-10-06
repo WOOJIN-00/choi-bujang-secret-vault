@@ -47,6 +47,14 @@
 
 > 상태 메모: Vercel 환경변수(`SUPABASE_URL`·`SUPABASE_SECRET_KEY`)가 반영돼 비로그인 `/api/notes`는 401로 거부됩니다. `rls-secret-notes.sql`은 아직 '제안'이며, 적용 여부는 학생이 실행으로 확정합니다.
 
+## 5단계 현재 상태
+
+자료 요청은 서버 함수 한곳(`/api/*`)으로만 모읍니다. 브라우저는 Supabase **자료**에 직접 접근하지 않고(로그인 Auth 호출만 유지), 메모 읽기·추가·수정·삭제는 모두 서버 함수를 거칩니다. 서버만 service_role 키로 원본 자료에 접근합니다.
+- 원본 자료 경로는 `aleph.config.json`의 `originalApiUrl`에 기록(쿼리 없는 HTTPS: Supabase REST `/rest/v1/secret_notes`).
+- `supabase/revoke-direct-access.sql`(**제안**): PUBLIC·anon·authenticated의 테이블 직접 권한을 회수 → 클라이언트 직접 접근 불가(service_role·서버 경로는 유지). 검토 후 학습 DB에서 실행.
+
+> 확인: anon 키로 원본(`/rest/v1/secret_notes`) 직접 요청은 거부되고, 화면의 A 정상 동작(서버 함수 경유)은 유지되어야 합니다.
+
 ### 가상 메모 노출 확인 절차
 
 Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검색합니다. 검색어(`<메모 본문 문구>`)는 본인이 아는 메모 내용으로 **직접** 바꿔 넣고, 이 저장소 파일에는 적지 마세요. 아래 두 곳을 각각 확인하고 결과를 기록하세요.
