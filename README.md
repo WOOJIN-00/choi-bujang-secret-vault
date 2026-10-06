@@ -36,6 +36,17 @@
 
 > 검증 메모: 코드·설정은 로컬 문법/`verifiedConfig` 검사를 통과했으나, 작성 시점의 실배포는 환경변수 미설정으로 `/api/notes`가 500이었습니다. 실배포 동작은 환경변수 반영·재배포 후 확인해야 합니다.
 
+## 4단계 현재 상태
+
+로그인해도 '내 자료'만 보이도록 소유자 검사를 붙였습니다. 자료 API는 **검증된 토큰의 `userId`만** 소유자로 쓰고(URL·본문의 `owner_id`는 무시), `secret_notes.owner_id`와 비교합니다.
+- `GET /api/notes`(내 목록) · `POST /api/notes`(내 소유로 추가)
+- `GET·PUT·DELETE /api/notes/:id` (모두 `owner_id = 내 id` 조건 → 남의 것·소유자 변경은 거부, 없는 것처럼 404)
+- 한 건 응답 `{id,title,body}`, 수정 입력 `{title,body}` (DB `content` ↔ `body`). `aleph.config.json`의 `allowedRoutes`에 위 5개 메서드·경로 기록.
+
+**다시 실행하는 방법(4단계):** (1) `supabase/assign-owners.sql`로 기존 메모를 A 소유로, B 시험 메모 1건 추가(이메일은 SQL Editor에서 직접 채움). (2) 앱은 service_role 키로 `owner_id` 필터링하므로 재배포만 하면 동작. (3) DB 직접 접근 차단은 `supabase/rls-secret-notes.sql`(RLS + 최소 권한) **제안** — 검토 후 SQL Editor에서 실행(앱은 service_role이라 RLS 우회, 심층 방어용).
+
+> 상태 메모: Vercel 환경변수(`SUPABASE_URL`·`SUPABASE_SECRET_KEY`)가 반영돼 비로그인 `/api/notes`는 401로 거부됩니다. `rls-secret-notes.sql`은 아직 '제안'이며, 적용 여부는 학생이 실행으로 확정합니다.
+
 ### 가상 메모 노출 확인 절차
 
 Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검색합니다. 검색어(`<메모 본문 문구>`)는 본인이 아는 메모 내용으로 **직접** 바꿔 넣고, 이 저장소 파일에는 적지 마세요. 아래 두 곳을 각각 확인하고 결과를 기록하세요.
