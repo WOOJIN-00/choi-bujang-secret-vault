@@ -16,17 +16,106 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; }
+    .auth { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #16273a; }
+    .auth h2 { margin: 0 0 12px; font-size: 18px; }
+    .auth form { display: grid; gap: 10px; }
+    .auth label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
+    .auth input { padding: 10px 12px; border-radius: 10px; border: 1px solid #51667c; background: #0e1824; color: #ecf4ff; font-size: 15px; }
+    .auth button { padding: 10px 16px; border-radius: 10px; border: 0; background: #8ad8df; color: #0a1420; font-size: 15px; font-weight: 700; cursor: pointer; justify-self: start; }
+    .auth-error { margin: 4px 0 0; color: #ffb3c1; font-size: 14px; min-height: 1.2em; }
+    .user-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .user-box span { color: #8ad8df; font-weight: 700; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
+    <div class="eyebrow">BYTE BACK · 3단계 로그인</div>
     <h1>점령된 자료실</h1>
     <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+
+    <section class="auth" aria-live="polite">
+      <h2>로그인</h2>
+      <!-- 로그아웃 상태: 로그인 폼 -->
+      <form id="login-form">
+        <label>이메일
+          <input id="email" type="email" autocomplete="email" required>
+        </label>
+        <label>비밀번호
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">로그인</button>
+        <p id="auth-error" class="auth-error" role="alert"></p>
+      </form>
+      <!-- 로그인 상태: 사용자 정보 + 로그아웃 -->
+      <div id="user-box" class="user-box" hidden>
+        <span id="user-email"></span>
+        <span style="color:#bfd0e5;font-weight:400;">님으로 로그인됨</span>
+        <button id="logout-btn" type="button">로그아웃</button>
+      </div>
+    </section>
+
     <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
     <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
   </main>
   <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
+
+    // 공개용 값입니다. 화면 코드에 넣어도 됩니다.
+    // 아래 두 값을 본인 Supabase 프로젝트 값으로 바꾸세요(둘 다 공개용).
+    const SUPABASE_URL = 'https://gdvnwkwvqmudzoysnlrc.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_T7nUErlYSyWJlEqTshuNkw_j5__TIpW'; // 공개 키
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    const loginForm = document.querySelector('#login-form');
+    const emailInput = document.querySelector('#email');
+    const passwordInput = document.querySelector('#password');
+    const authError = document.querySelector('#auth-error');
+    const userBox = document.querySelector('#user-box');
+    const userEmail = document.querySelector('#user-email');
+    const logoutBtn = document.querySelector('#logout-btn');
+
+    // 로그인 여부에 따라 화면 상태를 바꿉니다.
+    function renderAuth(session) {
+      const user = session?.user ?? null;
+      if (user) {
+        loginForm.hidden = true;
+        userBox.hidden = false;
+        userEmail.textContent = user.email ?? '(이메일 없음)';
+        authError.textContent = '';
+      } else {
+        loginForm.hidden = false;
+        userBox.hidden = true;
+      }
+    }
+
+    // 공식 SDK 흐름만 사용합니다. 비밀번호·JWT를 직접 만들지 않습니다.
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      authError.textContent = '';
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailInput.value.trim(),
+        password: passwordInput.value,
+      });
+      if (error) {
+        // 실패 이유를 화면에 보여 줍니다.
+        authError.textContent = `로그인 실패: ${error.message}`;
+        return;
+      }
+      passwordInput.value = '';
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+      const { error } = await supabase.auth.signOut();
+      if (error) authError.textContent = `로그아웃 실패: ${error.message}`;
+    });
+
+    // 로그인/로그아웃 등 상태 변화에 맞춰 화면을 갱신합니다.
+    supabase.auth.onAuthStateChange((_event, session) => renderAuth(session));
+    const { data: { session } } = await supabase.auth.getSession();
+    renderAuth(session);
+
+    // 가상 자료 카드 (기존 흐름 유지: 서버 함수에서 읽어옴)
     const list = document.querySelector('#notes');
     try {
       const response = await fetch('/api/notes', { cache: 'no-store' });
