@@ -1,0 +1,23 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "brute-force",
+  "basis": "MITRE ATT&CK T1110 (Brute Force)",
+  "basisUrl": "https://attack.mitre.org/techniques/T1110/",
+  "note": "무차별 로그인 공격의 알려진 형태입니다. 근거(MITRE T1110)가 있는 패턴만 담았습니다. 각 패턴에 근거 한 줄이 있습니다.",
+  "patterns": [
+    {
+      "id": "same-source-failed-logins",
+      "name": "같은 주소의 로그인 실패 연속",
+      "match": "같은 data.srcip에서 짧은 시간(예: 2분) 안에 로그인 실패가 임계치 이상 연속으로 쌓임",
+      "signals": ["data.srcip 동일", "짧은 시간 창", "로그인 실패 반복"],
+      "basis": "MITRE T1110.001 Password Guessing — 한 출발지에서 암호를 반복 추측하며 로그인 실패가 몰림."
+    },
+    {
+      "id": "password-spraying",
+      "name": "여러 계정에 같은 비밀번호 대입",
+      "match": "같은 data.srcip가 서로 다른 계정(data.srcuser) 여러 개에 같은 비밀번호로 로그인 실패를 넣음",
+      "signals": ["data.srcip 동일", "서로 다른 계정 다수", "같은 비밀번호 대입"],
+      "basis": "MITRE T1110.003 Password Spraying — 한 출발지가 흔한 비밀번호 하나를 여러 계정에 넓게 시도."
+    }
+  ]
+}
