@@ -1,0 +1,30 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "web-injection",
+  "basis": "MITRE ATT&CK T1190 (Exploit Public-Facing Application)",
+  "basisUrl": "https://attack.mitre.org/techniques/T1190/",
+  "note": "웹 주입 공격의 알려진 형태입니다. 근거(MITRE T1190)가 있는 패턴만 담았습니다. 각 패턴에 근거 한 줄이 있습니다.",
+  "patterns": [
+    {
+      "id": "sql-injection",
+      "name": "요청 인자에 SQL 구문 주입",
+      "match": "요청 인자(data.url의 쿼리 등)에 SQL 구문(따옴표 이어 붙이기, UNION/SELECT, 주석 등)이 반복해서 들어옴",
+      "signals": ["요청 인자 속 SQL 구문", "같은 주소에서 반복"],
+      "basis": "MITRE T1190 — 공개 앱의 입력 검증 약점을 노려 SQL 구문을 주입(CWE-89 SQL Injection)."
+    },
+    {
+      "id": "xss-script-tag",
+      "name": "요청 인자에 스크립트 태그 주입",
+      "match": "요청 인자에 <script> 등 스크립트 삽입 표기가 반복해서 들어옴",
+      "signals": ["요청 인자 속 스크립트 태그", "같은 주소에서 반복"],
+      "basis": "MITRE T1190 — 공개 앱에 스크립트를 주입해 실행시키려는 시도(CWE-79 Cross-site Scripting)."
+    },
+    {
+      "id": "path-traversal",
+      "name": "경로 거슬러 올라가기(../) 반복",
+      "match": "요청 경로/인자에 ../ 같은 상위 경로 이동 표기가 반복해서 들어옴",
+      "signals": ["요청 경로 속 ../", "같은 주소에서 반복"],
+      "basis": "MITRE T1190 — 공개 앱의 경로 처리 약점으로 허용 밖 파일에 접근 시도(CWE-22 Path Traversal)."
+    }
+  ]
+}
