@@ -71,3 +71,16 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 **과거 노출은 아직 해소되지 않았습니다.** 이번 변경 이전의 공개 커밋(예: `7230b4b`)과 그 커밋으로 만들어진 옛 배포에는 네 건의 가상 메모가 그대로 남아 있습니다. GitHub 커밋 이력과 이전 배포가 공개로 남아 있는 한, 현재 파일에서 메모가 사라졌어도 **과거 노출이 해소됐다고 적지 마세요.** 과거 노출 해소는 이력·옛 배포까지 정리해야 하는 별도 작업입니다.
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
+
+## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
+
+`xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
+
+- `patterns.json` — 근거(T1110) 있는 패턴 2종: 같은 주소의 로그인 실패 연속(T1110.001), 여러 계정에 같은 비밀번호 대입(T1110.003).
+- `decide.mjs` — 패턴을 상수로 담고 `decide(alert) → { action: block|alert|record, confidence, reason }`. 임계값 0.85 block / 0.5 alert / 그 아래 record. import·파일 I/O·네트워크 없이 경보 하나로 혼자 판단.
+- `respond.mjs` — block 후보만 골라 출발 주소(srcip) 기준 거부 규칙(만료 시각·근거 경보 번호 포함)으로 내보내고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓음. 정상 이벤트 주소에는 규칙을 넣지 않음.
+- `read-alerts.mjs` — 경보 확인용(판정기가 import 하지 않음).
+
+**다시 실행하는 방법:** `npm run xdr:run -- brute-force` → `xdr/brute-force/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/brute-force/respond.mjs`.
+
+**작성 시점 로컬 확인(가상 경보 28건):** counts `block 10 / alert 9 / record 9`, 정상 이벤트(T1110 아님) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
