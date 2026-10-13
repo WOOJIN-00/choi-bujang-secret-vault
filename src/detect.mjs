@@ -26,8 +26,35 @@ export function readEvents(events) {
   return events.map(readEvent);
 }
 
+const WINDOW_MS = 10 * 60 * 1000; // 10분 구간
+const BURST_LIMIT = 120; // 120건 초과(=121건 이상)만 의심. 정확히 120건은 대상 아님.
+
+// 갑작스러운 다량 조회: 같은 가명 사용자의 GET이 어느 10분 구간에서든 120건을 넘는지 찾습니다.
+// 다른 사용자의 사건을 합산하거나 10분 밖의 사건을 같은 묶음으로 세지 않습니다.
+// 네트워크·지역 신호는 9단계 사건 계약에 없으므로 판정에 쓰지 않습니다(복합 조건은 7단계 step_up 담당).
+function findBurstSubject(readings) {
+  const timesBySubject = new Map();
+  for (const reading of readings) {
+    if (reading.method !== 'GET' || !reading.subject || !reading.at) continue;
+    const ms = Date.parse(reading.at);
+    if (Number.isNaN(ms)) continue;
+    if (!timesBySubject.has(reading.subject)) timesBySubject.set(reading.subject, []);
+    timesBySubject.get(reading.subject).push(ms);
+  }
+  for (const [subject, times] of timesBySubject) {
+    times.sort((a, b) => a - b);
+    let left = 0;
+    for (let right = 0; right < times.length; right += 1) {
+      while (times[right] - times[left] > WINDOW_MS) left += 1; // 10분 밖은 묶음에서 제외
+      if (right - left + 1 > BURST_LIMIT) return subject;
+    }
+  }
+  return null;
+}
+
 export function detect(events) {
-  // 이번 단계는 입력 정리만 합니다. 안전한 값만 추린 뒤, 회수 제안 판정은 다음 단계에서 채웁니다.
-  readEvents(events);
+  const readings = readEvents(events); // 안전한 값만 추린 기록으로 정리
+  const subject = findBurstSubject(readings);
+  if (subject) return { action: 'propose_revocation', reasonCode: 'burst_read', subject };
   return { action: 'observe' };
 }
