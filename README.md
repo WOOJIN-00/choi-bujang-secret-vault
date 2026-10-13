@@ -158,6 +158,8 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 - 소유자는 **검증된 토큰의 `userId`로만** 판단합니다(본문·URL의 `owner_id`·`role` 불신). 소유자가 아니거나 없는 건은 `404`, 사본 무결성(해시) 불일치는 `409`로 **복원 중단**.
 - 그 **한 건만** `id` 기준 upsert로 되살리고 다른 메모는 건드리지 않습니다. 복원 후 다시 ID·소유자·해시를 대조해 어긋나면 `500`. 응답에는 메모 본문을 넣지 않고 `id`·`contentSha256`만 돌려줍니다.
 - 복원 1건마다 `restore_audit` 테이블에 **추가(append)** 로 감사 기록을 남깁니다(과거 기록 삭제·덮어쓰기 없음). `aleph.config.json`의 `restoreRoute`에 `POST /api/restore` 기록.
+- **판정기·허용 경로에도 등록:** 엔진은 요청을 앱에 넘기기 전에 경로와 판정기를 먼저 확인합니다. 그래서 `allowedRoutes`에 `POST /api/restore`를 추가하고, `src/decider.mjs`의 `resource_zone`에서 `POST /restore` **한 모양만** 허용했습니다(다른 메서드·하위 경로는 계속 `route_not_allowed`, 미등록 기기는 `device_not_registered`). 처음 제출(커밋 `9dbaf1b`)에서는 이 등록이 빠져 심판의 복구 요청이 앱에 도달하지 못했고(Vercel 로그에 심판의 `/api/restore` 요청 없음), `S10_BACKUP_UNVERIFIED`로 판정됐습니다.
+- 정책을 의도적으로 바꿨으므로 검증 정책 사본(`policy/verified-policy.json`, 버전 `verified-stage10-restore-route`)과 시험 정책 기준선을 다시 찍었습니다. 재기준 전 `policy:diff`가 새 경로를 차이로 정확히 표시하는 것을 확인했습니다.
 
 **다시 실행하는 방법(10단계 확인 순서):**
 1. `npm run restore:test` — 시험 계정 **B의 가상 메모 한 건**으로 대조 확인(B가 B 사본 복원 시 ID·소유자·내용 해시 일치, A의 B 사본 복원·손상 사본·ID 불일치는 차단). 실제 DB 없이 순수 대조 확인입니다.

@@ -13,6 +13,7 @@
       "GET /api/notes/:id",
       "GET /api/notices",
       "GET /api/notices/:id",
+      "POST /api/restore",
       "PUT /api/notes/:id"
     ]
   },
