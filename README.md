@@ -100,6 +100,17 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 > 가상 요청 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 계약(실경로 신호·재로그인 시각)이 준비되면 그때 실제 자료 차단/허용을 실측합니다.
 
+## 8단계 현재 상태 (자료마다 갈 수 있는 구역을 나눕니다)
+
+`api/_resources.js`에 자원 식별 층을 넣어, 내 자료실 메모와 강사 공지를 **서로 다른 자원 ID 네임스페이스**(구역)로 구분합니다.
+
+- 구역: 내 메모 = `my-notes`(`res:my-notes:note[:<id>]`), 강사 공지 = `instructor-notice`(`res:instructor-notice:notice[:<id>]`). 두 구역의 자원 ID가 서로 달라 섞이지 않습니다.
+- `resourceForRequest(request)`가 요청 경로로 구역/자원 ID를 정하고, `api/notes.js`·`api/notes/[id].js`가 응답에 표시합니다(헤더 `X-Resource-Zone`·`X-Resource-Id`, 각 메모에 `resourceId` 필드).
+- **보존**: 기존 주소(`allowedRoutes` 5개)·자료 본문(`id/title/body`)·화면 메뉴(`public/index.html`)는 그대로. 모르는 주소는 `zone: unknown, resourceId: null`로 두고 임의 승격하지 않습니다.
+- 강사 공지는 **자원 ID 구역만 등록**했고, 실제 공지 엔드포인트·데이터·메뉴는 아직 붙이지 않았습니다(주소·메뉴 보존).
+
+**다시 실행하는 방법(8단계 확인 순서):** `node -e "import('./api/_resources.js').then(m=>{console.log(m.resourceForRequest({url:'/api/notes'}));console.log(m.resourceForRequest({url:'/api/notices'}));})"` → 두 요청이 서로 다른 구역/자원 ID로 나오면 정상.
+
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
