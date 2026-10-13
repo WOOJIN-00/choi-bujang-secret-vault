@@ -86,6 +86,20 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 > 이 명령은 가상 요청 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 설치할 접속 프로그램은 없습니다.
 
+## 7단계 현재 상태 (평소와 다른 접속은 다시 확인합니다)
+
+`src/decider.mjs`에 입력 검사와 `step_up_required` 규칙을 넣었습니다. 기존 `device_registered` 규칙은 유지합니다(`RULE_IDS = ['device_registered', 'step_up_required']`).
+
+- **입력 검사 `readAccessContext(request)`**: 엔진이 넘긴 `signals.source`를 `none`/`fixture`/`unclear`로 구분하고, 출처가 없음·불명확이면 지역·시각·네트워크를 `unknown`으로 둡니다(임의 정상값으로 안 채움 → 위조 클라이언트 값이 신뢰 정보로 승격되지 않음). `judge_fixture`는 값은 읽되 실제 위치 증거로 쓰지 않음(`realEvidence=false`).
+- **`step_up_required` 규칙**: 등록 기기라도 **평소와 다른 시각 + 처음 보는 네트워크 + 갑자기 많은 자료 읽기**가 함께일 때만 영구 차단이 아닌 **추가 본인 확인(`step_up`)** 을 요구하고 사유를 `reasonCode`로 남깁니다. **지역 하나만으로는 차단하지 않습니다.** 최근 추가 확인을 통과한 요청(`stepUp.verified`, 0~900초)은 다시 묻지 않고 허용합니다.
+- **재로그인 시각 계약은 아직 없음**: 엔진 입력의 재인증 계약은 `stepUp:{verified, authAgeSeconds}`뿐이고 별도 "재로그인 시각" 필드는 없습니다. 그래서 가상 사건 수준 재판정만 시험하고 **실제 `api/*` 자료 차단은 미실행**으로 둡니다. 토큰 원문은 어디에도 기록하지 않습니다.
+
+**다시 실행하는 방법(7단계 확인 순서):**
+1. `npm run fixture:7` — `정상 사건: allow`, `복합 이상 사건: step_up` 이어야 합니다.
+2. `npm run decider:test` — 네 줄 모두 `통과`(등록 정상 allow / 미등록 deny / 복합 이상 step_up / 다시 확인한 복합 이상 allow).
+
+> 가상 요청 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 계약(실경로 신호·재로그인 시각)이 준비되면 그때 실제 자료 차단/허용을 실측합니다.
+
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
