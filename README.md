@@ -72,6 +72,20 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
+## 6단계 현재 상태 (등록한 기기만 자료실에 들어옵니다)
+
+`src/decider.mjs`에 `device_registered` 규칙을 넣었습니다. 엔진이 확인해 넣어 준 `deviceRegistered`가 `true`일 때만 내 자료실 읽기를 **허용(allow)** 하고, 미등록(`false`)이거나 값이 없으면 이유 코드 `device_not_registered`로 **거부(deny)** 합니다.
+- `RULE_IDS`에 `device_registered` 추가(기존 `starter.deny` 유지). 응답은 계약의 5개 이름(`schema·requestId·decision·reasonCode·ruleIds`)만 사용.
+- 기기 검증은 엔진이 끝내고 불리언으로 전달하므로, **새 인증서·CA·서명 키를 만들거나 설치하는 과정이 없습니다.** 미등록 기기 공격 자체는 심판이 맡습니다.
+
+**다시 실행하는 방법(6단계 확인 순서):**
+1. `npm run decider:test` 실행 — 두 줄 모두 `통과`여야 합니다.
+   - `통과 · 등록 기기의 정상 요청` (deviceRegistered=true → `allow`)
+   - `통과 · 미등록 기기의 가상 요청` (deviceRegistered=false → `deny`, `device_not_registered`)
+2. 실제 판정 값까지 눈으로 보려면 같은 규칙을 가상 요청에 직접 넣어 확인합니다(등록=`allow`/`approved`, 미등록=`deny`/`device_not_registered`).
+
+> 이 명령은 가상 요청 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 설치할 접속 프로그램은 없습니다.
+
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
