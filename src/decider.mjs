@@ -1,7 +1,7 @@
 // ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기입니다.
 // 6단계부터 규칙을 하나씩 추가합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
+export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required', 'resource_zone']);
 
 // 출처가 없음을 뜻하는 표식(실제 경로의 기본값). 접속 증거로 쓰지 않습니다.
 const NO_EVIDENCE_SOURCES = new Set(['none', 'unknown', '']);
@@ -85,11 +85,60 @@ function isRecentlyReverified(stepUp) {
     && stepUp.authAgeSeconds >= 0 && stepUp.authAgeSeconds <= 900;
 }
 
+// 요청의 메서드와 경로 '모양'을 꺼냅니다. route('METHOD /path/:id')를 우선 쓰고, 없으면 method+path.
+// 쿼리(?...)는 떼고(기능을 쿼리로 고르지 않음), 배포 표기 차이를 위해 선행 /api 를 떼어 맞춥니다.
+function routeShape(request) {
+  const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
+  let path = '';
+  if (typeof request?.route === 'string' && request.route.includes(' ')) {
+    path = request.route.split(/\s+/u)[1] || '';
+  } else if (typeof request?.path === 'string') {
+    path = request.path;
+  }
+  path = path.split('?')[0].replace(/\/+$/u, '');
+  path = path.replace(/^\/api(?=\/|$)/u, '');
+  const segments = path.split('/').filter(Boolean);
+  return { method, segments };
+}
+
+// resource_zone 규칙: 서비스와 '정확한 경로 모양'으로 자료 구역을 나눕니다.
+//  - 메모(notes): 자료 ID 하나를 고르는 경로(/notes/:id)만 허용, ID 없는 전체 목록/컬렉션(/notes)은 거부.
+//      :id는 UUID로 좁히지 않습니다(심판 가상 ID 허용). :id와 같은 깊이에 export 같은 기능 경로는 두지 않습니다.
+//      주인 비교는 여기서 하지 않고 제작 3의 API가 합니다.
+//  - 반 공지(notices): 읽기(GET)만 허용, 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 거부.
+//      강사의 공지 수정은 역할이 없는 판정기가 아니라 서버의 관리 경로에서 처리합니다.
+//  - 강사 자료 및 그 외/알 수 없는 경로: 모두 거부. 기능은 쿼리로 고르지 않습니다.
+function isAllowedRoute({ method, segments }) {
+  // 메모: 정확히 [notes, <id>] 두 칸만 허용(단일 자료). 한 칸(/notes)=컬렉션은 거부.
+  if (segments[0] === 'notes') {
+    if (segments.length !== 2) return false; // 전체 목록/컬렉션 또는 더 깊은 경로 거부
+    return method === 'GET' || method === 'PUT' || method === 'DELETE';
+  }
+  // 반 공지: 읽기만. 목록([notices])·단일([notices, :id]) 모두 GET만 허용.
+  if (segments[0] === 'notices') {
+    if (segments.length !== 1 && segments.length !== 2) return false;
+    return method === 'GET';
+  }
+  // 강사 자료·알 수 없는 경로: 거부.
+  return false;
+}
+
 export async function decide(request) {
   const base = {
     schema: 'aleph.decision.v1',
     requestId: request.requestId,
   };
+
+  // resource_zone 규칙: 허용된 자료 구역·경로 모양이 아니면 먼저 거부합니다.
+  // (메모 전체 목록, 공지 쓰기, 강사 자료, 알 수 없는 경로 등은 여기서 걸러집니다.)
+  if (!isAllowedRoute(routeShape(request))) {
+    return {
+      ...base,
+      decision: 'deny',
+      reasonCode: 'route_not_allowed',
+      ruleIds: ['resource_zone'],
+    };
+  }
 
   // device_registered 규칙(기존 유지): 엔진이 확인해 넣어 준 deviceRegistered 가 true 일 때만 진행.
   // 미등록(false)이거나 값이 없으면 거부합니다.
