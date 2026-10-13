@@ -4,6 +4,7 @@
 // 토큰 검사·소유자 비교는 api/_notes.js 공통 모듈을 씁니다. URL·본문의 owner_id는 신뢰하지 않습니다.
 import { authenticate, readTitleBody, toItem } from './_notes.js';
 import { resourceForRequest, tagResponse, memoResourceId } from './_resources.js';
+import { authorizeMemo } from './_authz.js';
 
 export default async function handler(request, response) {
   // 8단계: 요청마다 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모는 my-notes 구역).
@@ -15,9 +16,10 @@ export default async function handler(request, response) {
   const ownerId = identity.userId;
 
   if (request.method === 'GET') {
+    // owner_id 를 함께 읽어 코드에서 '다시' 소유자 대조(심층 방어). 쿼리 필터가 바뀌어도 내 자료만 나갑니다.
     const { data, error } = await supabase
       .from('secret_notes')
-      .select('id, title, content')
+      .select('id, title, content, owner_id')
       .eq('owner_id', ownerId)
       .order('created_at', { ascending: true });
     if (error) {
@@ -25,8 +27,10 @@ export default async function handler(request, response) {
       response.status(502).json({ error: 'NOTES_READ_FAILED' });
       return;
     }
-    // 각 메모에 소속 구역의 자원 ID를 표시합니다(기존 id/title/body는 그대로).
-    const notes = (data ?? []).map((row) => ({ ...toItem(row), resourceId: memoResourceId(row.id) }));
+    // 검증된 사용자와 저장된 owner_id 를 다시 대조해 내 것만 남깁니다(owner_id 는 응답에 넣지 않음).
+    const notes = (data ?? [])
+      .filter((row) => authorizeMemo(identity, row.owner_id).ok)
+      .map((row) => ({ ...toItem(row), resourceId: memoResourceId(row.id) }));
     response.status(200).json({ notes, zone: resource.zone });
     return;
   }
