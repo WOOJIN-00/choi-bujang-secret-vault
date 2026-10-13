@@ -17,5 +17,5 @@
     "GET /api/notices/:id"
   ],
   "originalApiUrl": "https://gdvnwkwvqmudzoysnlrc.supabase.co/rest/v1/secret_notes",
-  "restoreRoute": null
+  "restoreRoute": "POST /api/restore"
 }
