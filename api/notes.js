@@ -3,8 +3,12 @@
 //   POST → 새 메모를 '내' 소유로 추가(본문 {title, body}, owner_id는 검증된 userId로 저장).
 // 토큰 검사·소유자 비교는 api/_notes.js 공통 모듈을 씁니다. URL·본문의 owner_id는 신뢰하지 않습니다.
 import { authenticate, readTitleBody, toItem } from './_notes.js';
+import { resourceForRequest, tagResponse, memoResourceId } from './_resources.js';
 
 export default async function handler(request, response) {
+  // 8단계: 요청마다 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모는 my-notes 구역).
+  const resource = tagResponse(response, resourceForRequest(request));
+
   const auth = await authenticate(request, response);
   if (!auth) return;
   const { identity, supabase } = auth;
@@ -21,7 +25,9 @@ export default async function handler(request, response) {
       response.status(502).json({ error: 'NOTES_READ_FAILED' });
       return;
     }
-    response.status(200).json({ notes: (data ?? []).map(toItem) });
+    // 각 메모에 소속 구역의 자원 ID를 표시합니다(기존 id/title/body는 그대로).
+    const notes = (data ?? []).map((row) => ({ ...toItem(row), resourceId: memoResourceId(row.id) }));
+    response.status(200).json({ notes, zone: resource.zone });
     return;
   }
 
@@ -41,7 +47,7 @@ export default async function handler(request, response) {
       response.status(502).json({ error: 'NOTES_WRITE_FAILED' });
       return;
     }
-    response.status(201).json(toItem(data));
+    response.status(201).json({ ...toItem(data), resourceId: memoResourceId(data.id) });
     return;
   }
 

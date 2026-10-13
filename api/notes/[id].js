@@ -4,8 +4,12 @@
 //   DELETE → '내' 메모만 삭제.
 // 소유자 비교는 검증된 userId만 씁니다. URL(:id)은 메모 id일 뿐이며, 소유자 판단에 쓰지 않습니다.
 import { authenticate, readTitleBody, toItem, UUID } from '../_notes.js';
+import { resourceForRequest, tagResponse, memoResourceId } from '../_resources.js';
 
 export default async function handler(request, response) {
+  // 8단계: 이 요청의 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모 한 건 = my-notes 구역).
+  tagResponse(response, resourceForRequest(request));
+
   const auth = await authenticate(request, response);
   if (!auth) return;
   const { identity, supabase } = auth;
@@ -30,7 +34,7 @@ export default async function handler(request, response) {
       return;
     }
     if (!data) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
-    response.status(200).json(toItem(data));
+    response.status(200).json({ ...toItem(data), resourceId: memoResourceId(data.id) });
     return;
   }
 
@@ -52,7 +56,7 @@ export default async function handler(request, response) {
     }
     // 없거나 내 것이 아니면 수정된 행이 없음 → 거부.
     if (!data) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
-    response.status(200).json(toItem(data));
+    response.status(200).json({ ...toItem(data), resourceId: memoResourceId(data.id) });
     return;
   }
 
