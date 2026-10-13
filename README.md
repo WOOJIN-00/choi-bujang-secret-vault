@@ -126,6 +126,19 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 2. 판정기 구역 규칙: `npm run decider:test`·`npm run fixture:7` 통과(기존 규칙 유지). `GET /notes/:id`는 allow, `GET /notes`·공지 쓰기·강사 자료는 deny.
 3. API 권한: 소유자 재대조·본문 role 불신은 `api/_authz.js`가 담당(라이브 소유자 격리는 배포 환경에서 2계정으로 실측).
 
+## 9단계 현재 상태 (도플갱어를 찾고 권한을 거둡니다)
+
+`src/detect.mjs`의 `detect(events)`에 가상 조회 사건 탐지를 넣었습니다. 사건 형식·규칙 계약은 `docs/DETECT_EVENTS.md`.
+
+- **입력 정리(`readEvent`/`readEvents`)**: 각 사건에서 안전한 값만 새 객체로 추립니다 — 가명 사용자(`identity.sub`)·기기(`device`)·요청 종류(`method`)·엔진이 준 판정(`decision`)·시각(`at`). 메모 본문·토큰·실명 등 그 밖의 값은 읽지도 담지도 않고, 원본 사건을 그대로 보관하지 않습니다. 브라우저가 보낸 사용자 번호는 신원으로 쓰지 않습니다.
+- **`burst_read` 규칙**: 같은 가명 사용자의 GET이 **어느 10분 구간에서든 120건을 넘을 때만** `{ action: 'propose_revocation', reasonCode: 'burst_read', subject }`를 돌려줍니다. 정확히 120건·10분 밖으로 흩어진 조회·다른 사용자 합산은 의심이 아니라 `observe`입니다.
+- **지역/네트워크 단독으로 확정하지 않습니다.** 네트워크 신호는 9단계 사건 계약에 없어 판정에 쓰지 않았습니다(네트워크+조회량 복합 판정은 7단계 `step_up_required`가 담당). `subject`로는 가명만 반환하고 토큰·본문·실명은 노출하지 않습니다.
+
+**다시 실행하는 방법(9단계 확인 순서):**
+1. `npm run detect:test` — 여섯 줄 모두 `통과`여야 합니다(정상 30건·10분 내 120건·서로 다른 사용자 각 100건·10분 밖 200건 → `observe` / 10분 내 121건·폭주 200건 → `propose_revocation`).
+
+> 가상 사건 로컬 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 회수 제안을 실제 `api/*` 집행 경로로 전달·집행하는 연결은 아직 미실행입니다.
+
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
