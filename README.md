@@ -106,10 +106,25 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 - 구역: 내 메모 = `my-notes`(`res:my-notes:note[:<id>]`), 강사 공지 = `instructor-notice`(`res:instructor-notice:notice[:<id>]`). 두 구역의 자원 ID가 서로 달라 섞이지 않습니다.
 - `resourceForRequest(request)`가 요청 경로로 구역/자원 ID를 정하고, `api/notes.js`·`api/notes/[id].js`가 응답에 표시합니다(헤더 `X-Resource-Zone`·`X-Resource-Id`, 각 메모에 `resourceId` 필드).
-- **보존**: 기존 주소(`allowedRoutes` 5개)·자료 본문(`id/title/body`)·화면 메뉴(`public/index.html`)는 그대로. 모르는 주소는 `zone: unknown, resourceId: null`로 두고 임의 승격하지 않습니다.
+- **보존**: 자료 본문(`id/title/body`)·화면 메뉴(`public/index.html`)는 그대로. 모르는 주소는 `zone: unknown, resourceId: null`로 두고 임의 승격하지 않습니다.
 - 강사 공지는 **자원 ID 구역만 등록**했고, 실제 공지 엔드포인트·데이터·메뉴는 아직 붙이지 않았습니다(주소·메뉴 보존).
 
-**다시 실행하는 방법(8단계 확인 순서):** `node -e "import('./api/_resources.js').then(m=>{console.log(m.resourceForRequest({url:'/api/notes'}));console.log(m.resourceForRequest({url:'/api/notices'}));})"` → 두 요청이 서로 다른 구역/자원 ID로 나오면 정상.
+**판정기 구역 규칙(`src/decider.mjs`, `resource_zone`)**: 서비스·정확한 경로 모양으로 구역을 나눕니다(이전 규칙 유지).
+
+- 메모: 단일 자료 경로(`/notes/:id`)의 GET·PUT·DELETE만 허용, ID 없는 전체 목록·컬렉션(`/notes`, POST)은 거부. `:id`는 UUID로 좁히지 않고, `:id` 깊이에 기능 경로를 두지 않으며, 쿼리로 기능을 고르지 않습니다. 메모 주인 비교는 판정기가 아니라 API에서.
+- 반 공지: 읽기(GET)만 허용, 쓰기(POST·PUT·PATCH·DELETE)는 누구에게나 거부. 강사의 공지 수정은 역할 없는 판정기 대신 서버 관리 경로에서.
+- 강사 자료·알 수 없는 경로: 모두 거부(`route_not_allowed`).
+- `aleph.config.json`의 `allowedRoutes`는 판정기가 허용하는 경로만(메서드 포함): `GET/PUT/DELETE /api/notes/:id`, `GET /api/notices`, `GET /api/notices/:id`.
+
+**API 측 권한 재대조(`api/_authz.js`, 심층 방어)**: 자료 API가 검증된 사용자와 저장된 소유자·강사 권한을 다시 대조합니다.
+
+- 메모 조회/수정/삭제에서 `owner_id`를 함께 읽어 코드로 소유자 재대조 → 없거나 소유자 아님은 `404`(메뉴 우회 직접 요청에도 남의/다른 구역 자료 노출 금지).
+- 화면 메뉴·요청 본문의 `role`은 **절대 불신**. 강사 권한은 서버 env `INSTRUCTOR_USER_IDS`(허용목록)에서만 판단(미설정이면 강사 없음). 거부 사유는 짧게(`not_owner`, `not_instructor`).
+
+**다시 실행하는 방법(8단계 확인 순서):**
+1. 자원 ID 구별: `node -e "import('./api/_resources.js').then(m=>{console.log(m.resourceForRequest({url:'/api/notes'}));console.log(m.resourceForRequest({url:'/api/notices'}));})"` → 두 요청이 서로 다른 구역/자원 ID.
+2. 판정기 구역 규칙: `npm run decider:test`·`npm run fixture:7` 통과(기존 규칙 유지). `GET /notes/:id`는 allow, `GET /notes`·공지 쓰기·강사 자료는 deny.
+3. API 권한: 소유자 재대조·본문 role 불신은 `api/_authz.js`가 담당(라이브 소유자 격리는 배포 환경에서 2계정으로 실측).
 
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
