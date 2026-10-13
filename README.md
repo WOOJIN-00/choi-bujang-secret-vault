@@ -139,6 +139,8 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 > 가상 사건 로컬 연습이며 반 엔진·운영 심판의 판정이 아닙니다. 회수 제안을 실제 `api/*` 집행 경로로 전달·집행하는 연결은 아직 미실행입니다.
 
+**단계 번호(`aleph.config.json`의 `step`) 갱신:** 9단계에 맞춰 `step`을 `9`로 올렸습니다. 이에 맞춰 1단계에만 고정돼 있던 `step === 1` 가드(`scripts/build-public.mjs`·`scripts/deployment-identity.mjs`·`src/attack-check.mjs`)를 `1~12` 범위 검사로 바꿔 `npm run build`·`npm run bundle`이 현재 단계에서도 동작하게 했습니다. 공개 `data.json`에는 메모가 없어야 하며(2단계 이후), 배포 식별 `aleph.json`의 `step`도 설정값을 따릅니다. 실제 배포 동작은 `git push` 후 Vercel 재배포로 확인해야 합니다(로컬 빌드만으로는 증명되지 않음).
+
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.

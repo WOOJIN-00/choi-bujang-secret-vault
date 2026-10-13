@@ -1,7 +1,9 @@
 // The student changes this check as each stage adds an attack to the same app.
 // Never return tokens, private keys, real names, or note bodies.
 export async function runAttackChecks(config) {
-  if (config.step !== 1) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (!Number.isInteger(config.step) || config.step < 1 || config.step > 12) {
+    throw new Error('aleph.config.json의 step을 확인해 주세요(1~12).');
+  }
   let app;
   try {
     app = new URL(config.publicAppUrl);
