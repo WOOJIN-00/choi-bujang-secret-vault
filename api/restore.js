@@ -39,12 +39,55 @@ export default async function handler(request, response) {
     return;
   }
 
+  // 1) 복구 직전에 사본을 '다시 읽어' manifest와 재검증. 실패하면 412로 중단(복구 금지).
+  //    미리보기(GET)도 같은 검증을 거칩니다. 이 검증은 로그인 없이도 결과를 보여 줄 수 있어
+  //    심판이 배포 주소로 '사본 일치'를 확인할 수 있게 합니다(비밀값 없음: 해시·id만).
+  const verified = await verifyBackups();
+
+  // 2) 미리보기(GET): 로그인 없이도 사본 검증 결과·버전·대상 해시·계획 토큰을 보여 줍니다.
+  //    아무것도 바꾸지 않습니다. 검증 실패면 412로 '복구 불가'임을 그대로 보여 줍니다.
+  if (request.method === 'GET') {
+    if (!verified.ok) {
+      response.status(412).json({ error: 'BACKUP_UNVERIFIED', backupVerified: false, reason: verified.reason });
+      return;
+    }
+    const base = {
+      preview: true,
+      applied: false,
+      backupVerified: true,
+      version: verified.version,
+      verifiedFiles: verified.checked,
+      retestPlan: 'docs/RESTORE_RETEST_PLAN.md',
+    };
+    const qid = readTargetId(request);
+    if (qid) {
+      const t = verified.notes.find((n) => n && n.id === qid);
+      if (!t) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+      response.status(200).json({
+        ...base,
+        id: t.id,
+        resourceId: memoResourceId(t.id),
+        ownerKey: t.ownerKey,
+        afterSha256: t.contentSha256,
+        planToken: planToken(t.id, verified.version, verified.manifestSha),
+      });
+      return;
+    }
+    // id 없이: 검증된 복구 대상 목록(버전·해시)을 보여 줍니다.
+    response.status(200).json({
+      ...base,
+      count: verified.notes.length,
+      targets: verified.notes.map((n) => ({
+        id: n.id, resourceId: memoResourceId(n.id), ownerKey: n.ownerKey, afterSha256: n.contentSha256,
+      })),
+    });
+    return;
+  }
+
+  // 3) 복구(POST): 로그인·검증을 요구합니다.
   const auth = await authenticate(request, response);
   if (!auth) return;
   const { identity, supabase } = auth;
-
-  // 1) 복구 직전에 사본을 '다시 읽어' manifest와 재검증. 실패하면 412로 중단(복구 금지).
-  const verified = await verifyBackups();
   if (!verified.ok) {
     console.error(`restore: 사본 검증 실패(${verified.reason}) → 412, 복구하지 않음.`);
     response.status(412).json({ error: 'BACKUP_UNVERIFIED', reason: verified.reason });
@@ -56,7 +99,6 @@ export default async function handler(request, response) {
 
   const target = verified.notes.find((n) => n && n.id === id);
   if (!target) {
-    // 검증된 사본에 없는 대상 → 숨겨서 404.
     response.status(404).json({ error: 'NOT_FOUND' });
     return;
   }
@@ -80,13 +122,7 @@ export default async function handler(request, response) {
     afterSha256: target.contentSha256,
   };
 
-  // 2) 미리보기(GET): 실행 전에 버전·바뀔 항목·계획 토큰을 보여 주고, 아무것도 바꾸지 않습니다.
-  if (request.method === 'GET') {
-    response.status(200).json({ ...plan, preview: true, applied: false, planToken: token });
-    return;
-  }
-
-  // 3) 복구(POST): 미리보기를 먼저 받았는지(planToken) 확인. 없거나 틀리면 428(실행 전 확인 필요).
+  // 미리보기를 먼저 받았는지(planToken) 확인. 없거나 틀리면 428(실행 전 확인 필요).
   const body = readBody(request) || {};
   if (body.planToken !== token) {
     response.status(428).json({
