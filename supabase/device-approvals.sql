@@ -3,7 +3,7 @@
 -- 승인은 버튼 클릭이나 브라우저 저장소가 아니라, 아래 표의 approved 값(서버/관리자가 지정)으로만 판단합니다.
 
 create table if not exists public.device_approvals (
-  user_id      uuid primary key,          -- 검증된 사용자 신원(기기 키를 브라우저에 저장하지 않음)
+  user_id      uuid primary key,          -- 검증된 사용자 신원(승인 근거는 이 서버 표에만 있음)
   requested_at timestamptz,               -- 승인 '요청'이 들어온 시각(POST /api/device)
   approved     boolean not null default false,  -- 서버/관리자가 직접 true 로 바꿀 때만 승인
   approved_at  timestamptz

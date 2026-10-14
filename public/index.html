@@ -58,7 +58,7 @@
     <section class="device" id="device-section" aria-live="polite" hidden>
       <h2>기기 승인</h2>
       <p><span id="device-mode" class="badge">확인 중…</span> <span id="device-state" class="badge">승인 상태 확인 중…</span></p>
-      <p class="muted" id="device-note">앱을 설치했다는 표시만으로 이 기기가 승인된 것은 아닙니다. 승인 여부는 <strong style="display:inline;color:#ecf4ff;">서버</strong>가 정하며, 승인 전에는 자료실이 열리지 않습니다. 기기 키·토큰은 이 화면의 저장소에 넣지 않습니다.</p>
+      <p class="muted" id="device-note">앱을 설치했다는 표시만으로 이 기기가 승인된 것은 아닙니다. 승인 여부는 <strong style="display:inline;color:#ecf4ff;">서버</strong>가 정하며, 승인 전에는 자료실이 열리지 않습니다. 승인 근거는 서버에만 있고, 이 화면은 승인 값을 저장하지 않습니다.</p>
       <button id="device-request-btn" type="button" hidden>이 기기 승인 요청</button>
       <p id="device-msg" class="muted" role="status"></p>
     </section>
@@ -105,7 +105,7 @@
     const deviceMsg = document.querySelector('#device-msg');
     const vault = document.querySelector('#vault');
 
-    // 로그인 토큰을 Authorization 헤더로만 보냅니다(기기 키는 저장하지 않음).
+    // 로그인 토큰을 Authorization 헤더로만 보냅니다(이 화면은 승인 값을 따로 저장하지 않음).
     async function authHeaders() {
       const { data: { session } } = await supabase.auth.getSession();
       return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : null;
@@ -265,7 +265,7 @@
     syncOnline();
 
     // 11단계: 기기 승인 상태 표시. '설치 여부'만 알려 주고, 그것이 '승인'이 아님을 분명히 합니다.
-    // 승인 여부는 서버·판정기가 보호 요청 때 정하며, 기기 키·토큰을 브라우저 저장소에 넣지 않습니다.
+    // 승인 여부는 서버·판정기가 보호 요청 때 정하며, 이 화면은 승인 근거를 브라우저 저장소에 두지 않습니다.
     const deviceMode = document.querySelector('#device-mode');
     const installed = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true;
