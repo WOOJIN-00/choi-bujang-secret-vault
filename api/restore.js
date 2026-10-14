@@ -1,12 +1,21 @@
 // 자료 복원 API (한 건): POST /api/restore
-//   본문 { id } — 비공개 가상 메모 사본(secret_notes_backup)에서 그 한 건만 되살립니다.
+//   본문 { id }           → 사본에서 그 한 건을 되살립니다(적용).
+//   본문 { id, preview:true } → 적용하지 않고 '복구 버전·바뀔 항목'만 보여 줍니다(실행 전 확인).
 //   ID·소유자·내용 해시를 사본과 대조하고, 다른 메모와 감사 기록은 보존합니다.
 //   소유자는 검증된 토큰의 userId로만 판단합니다(본문/URL의 owner_id·role 불신).
 import { authenticate } from './_notes.js';
 import { memoResourceId } from './_resources.js';
 import {
-  readRestoreId, verifyAgainstBackup, verifyRestored, buildAuditEntry,
+  readRestoreId, verifyAgainstBackup, verifyRestored, buildAuditEntry, contentHash,
 } from './_restore.js';
+
+// 본문에서 preview(미리보기) 요청 여부만 읽습니다. 참이면 적용하지 않고 계획만 보여 줍니다.
+function wantsPreview(request) {
+  const raw = request.body;
+  const data = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw
+    : (typeof raw === 'string' && raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null);
+  return Boolean(data && (data.preview === true || data.dryRun === true));
+}
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
@@ -21,16 +30,17 @@ export default async function handler(request, response) {
   const { identity, supabase } = auth;
 
   const id = readRestoreId(request);
-  console.log(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)}`);
+  const preview = wantsPreview(request);
+  console.log(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)} preview=${preview}`);
   if (!id) {
     response.status(400).json({ error: 'INVALID_ID' });
     return;
   }
 
-  // 1) 비공개 사본에서 그 한 건을 읽습니다(service_role, 서버 전용).
+  // 1) 비공개 사본에서 그 한 건을 읽습니다(service_role, 서버 전용). 버전(backed_up_at)도 함께 읽습니다.
   const { data: backup, error: readError } = await supabase
     .from('secret_notes_backup')
-    .select('id, owner_id, title, content, content_sha256')
+    .select('id, owner_id, title, content, content_sha256, backed_up_at')
     .eq('id', id)
     .maybeSingle();
   if (readError) {
@@ -40,6 +50,7 @@ export default async function handler(request, response) {
   }
 
   // 2) 복원 전 대조: ID·소유자·내용 해시. 손상 사본이면 중단, 그 외 불일치는 404로 숨김.
+  //    (미리보기든 적용이든, 검증을 통과하지 못하면 여기서 멈춥니다.)
   const check = verifyAgainstBackup({ identity, requestedId: id, backup });
   console.log(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
   if (!check.ok) {
@@ -53,7 +64,32 @@ export default async function handler(request, response) {
     return;
   }
 
-  // 3) 그 한 건만 되살립니다(id 기준 upsert). owner_id/내용은 사본 값만 쓰고, 다른 행은 건드리지 않습니다.
+  // 3) 현재(복원 전) 상태를 읽어 '바뀔 항목'을 셈합니다. 내 소유 행만 비교합니다.
+  const { data: beforeRow } = await supabase
+    .from('secret_notes')
+    .select('content')
+    .eq('id', id)
+    .eq('owner_id', backup.owner_id)
+    .maybeSingle();
+  const beforeSha256 = beforeRow ? contentHash(beforeRow.content) : null;
+  const willChange = beforeSha256 !== backup.content_sha256;
+  const plan = {
+    id: backup.id,
+    resourceId: memoResourceId(backup.id),
+    version: backup.backed_up_at ?? null, // 복구할 사본의 버전(백업 시각)
+    willChange, // 바뀔 항목: 현재 내용이 사본과 다른가
+    beforeSha256, // 현재(복원 전) 내용 해시 (없으면 null)
+    afterSha256: backup.content_sha256, // 복원 후 내용 해시(=사본)
+  };
+
+  // 4-a) 미리보기: 실행 전에 버전과 바뀔 항목만 보여 주고, 아무것도 적용하지 않습니다.
+  if (preview) {
+    console.log(`[S10] restore id=${id} preview version=${plan.version} willChange=${willChange} → 200(no-apply)`);
+    response.status(200).json({ ...plan, preview: true, applied: false });
+    return;
+  }
+
+  // 4-b) 적용: 그 한 건만 되살립니다(id 기준 upsert). 사본 값만 쓰고, 다른 행은 건드리지 않습니다.
   const { data: restored, error: writeError } = await supabase
     .from('secret_notes')
     .upsert(
@@ -68,7 +104,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  // 4) 복원 후 대조: 되살린 한 건이 사본과 ID·소유자·내용 해시까지 같은지 확인.
+  // 5) 복원 후 대조: 되살린 한 건이 사본과 ID·소유자·내용 해시까지 같은지 확인.
   const verified = verifyRestored({ backup, restored });
   if (!verified.ok) {
     console.error(`restore: 복원 결과 대조 실패(${verified.reason}).`);
@@ -76,7 +112,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  // 5) 감사 이력에 한 줄 '추가'(덮어쓰기/삭제 없음 → 과거 기록 보존).
+  // 6) 감사 이력에 한 줄 '추가'(덮어쓰기/삭제 없음 → 과거 기록 보존).
   const { error: auditError } = await supabase
     .from('restore_audit')
     .insert(buildAuditEntry({ identity, backup, at: new Date().toISOString() }));
@@ -86,13 +122,13 @@ export default async function handler(request, response) {
     return;
   }
 
-  console.log(`[S10] restore id=${id} applied verifyAfter=${verified.ok} → 200`);
-  // 본문은 돌려주지 않고, 대조에 쓴 식별값만 반환합니다.
+  console.log(`[S10] restore id=${id} applied verifyAfter=${verified.ok} version=${plan.version} changed=${willChange} → 200`);
+  // 본문은 돌려주지 않고, 복구 버전·바뀔 항목과 대조에 쓴 식별값을 돌려줍니다.
   response.status(200).json({
-    id: restored.id,
-    resourceId: memoResourceId(restored.id),
+    ...plan,
     contentSha256: check.contentSha256,
     ownerMatched: true,
     restored: true,
+    applied: true,
   });
 }
