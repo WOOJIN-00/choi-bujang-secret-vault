@@ -42,6 +42,7 @@ async function call(ctx, { method = 'GET', path, url, token, headers, body }) {
 const addRow = (ctx, row) => { ctx.rows.push(row); return row; };
 
 const notRunRow = (spec, reason) => ({
+  attackId: spec.attackId ?? null,
   step: spec.step, kind: spec.kind, request: spec.request, expected: spec.expected,
   actual: `미실행: ${reason}`, requestId: DASH, serverId: DASH, at: DASH,
   result: RESULT.NOT_RUN, evidence: EVIDENCE.NONE,
@@ -54,6 +55,7 @@ async function live(ctx, spec) {
   if (!res.ok) { addRow(ctx, notRunRow(spec, `네트워크 오류(${res.error}) — 측정하지 못함`)); return null; }
   const verdict = spec.judge(res);
   addRow(ctx, {
+    attackId: spec.attackId ?? null,
     step: spec.step, kind: spec.kind, request: spec.request, expected: spec.expected,
     actual: verdict.actual, requestId: res.requestId, serverId: res.serverId ?? DASH, at: res.at,
     result: verdict.pass ? RESULT.PASS : RESULT.FAIL, evidence: EVIDENCE.LIVE,
@@ -90,14 +92,14 @@ async function publicRows(ctx) {
   const FORGED = 'aaaaaaaaaa.bbbbbbbbbb.cccccccccc';
   await live(ctx, { step: 1, kind: 'normal', request: 'GET /', expected: '200 · 화면 HTML',
     req: { path: '/' }, judge: (r) => ({ pass: r.status === 200 && /<html/i.test(r.text), actual: `${r.status} · ${r.text.length}바이트` }) });
-  await live(ctx, { step: 1, kind: 'forbidden', request: 'GET /data.json', expected: '200 · notes 비어 있음(메모 노출 없음)',
+  await live(ctx, { step: 1, kind: 'forbidden', request: 'GET /data.json', attackId: 'anonymous_note_read', expected: '200 · notes 비어 있음(메모 노출 없음)',
     req: { path: '/data.json' }, judge: (r) => {
       const empty = r.status === 200 && Array.isArray(r.json?.notes) && r.json.notes.length === 0;
       return { pass: empty, actual: `${r.status} · notes ${Array.isArray(r.json?.notes) ? r.json.notes.length : '?'}건` };
     } });
-  await live(ctx, { step: 2, kind: 'forbidden', request: 'GET /api/notes (로그인 없음)', expected: '401',
+  await live(ctx, { step: 2, kind: 'forbidden', request: 'GET /api/notes (로그인 없음)', attackId: 'anonymous_notes_api', expected: '401',
     req: { path: '/api/notes' }, judge: (r) => ({ pass: r.status === 401, actual: brief(r) }) });
-  await live(ctx, { step: 3, kind: 'forbidden', request: 'GET /api/notes (위조 토큰)', expected: '401',
+  await live(ctx, { step: 3, kind: 'forbidden', request: 'GET /api/notes (위조 토큰)', attackId: 'forged_token_notes', expected: '401',
     req: { path: '/api/notes', token: FORGED }, judge: (r) => ({ pass: r.status === 401, actual: brief(r) }) });
   const cfg = await live(ctx, { step: 3, kind: 'normal', request: 'GET /api/public-config', expected: '200 · 공개 설정 항목 있음(값은 표에 쓰지 않음)',
     req: { path: '/api/public-config' }, judge: (r) => {
@@ -107,7 +109,7 @@ async function publicRows(ctx) {
   if (cfg && typeof cfg.json?.url === 'string' && typeof cfg.json?.publishableKey === 'string') {
     ctx.config = { url: cfg.json.url, publishableKey: cfg.json.publishableKey };
   }
-  await live(ctx, { step: 5, kind: 'forbidden', request: '원본 자료 API 직접 요청(공개 키만)', expected: '행이 오지 않음(401·403 거부 또는 빈 목록)',
+  await live(ctx, { step: 5, kind: 'forbidden', request: '원본 자료 API 직접 요청(공개 키만)', attackId: 'direct_original_api', expected: '행이 오지 않음(401·403 거부 또는 빈 목록)',
     skip: ctx.config && aleph.originalApiUrl ? null : '공개 설정 또는 원본 API 주소를 얻지 못함',
     req: { url: `${aleph.originalApiUrl}?select=id&limit=1`, headers: { apikey: ctx.config?.publishableKey ?? '' } },
     judge: (r) => {
@@ -118,19 +120,19 @@ async function publicRows(ctx) {
     } });
   await live(ctx, { step: 10, kind: 'normal', request: 'GET /api/restore (공개 미리보기)', expected: '200 · backupVerified true',
     req: { path: '/api/restore' }, judge: (r) => ({ pass: r.status === 200 && r.json?.backupVerified === true, actual: `${brief(r)} · backupVerified ${r.json?.backupVerified}` }) });
-  await live(ctx, { step: 10, kind: 'forbidden', request: 'POST /api/restore (로그인 없음)', expected: '401',
+  await live(ctx, { step: 10, kind: 'forbidden', request: 'POST /api/restore (로그인 없음)', attackId: 'restore_without_login', expected: '401',
     req: { method: 'POST', path: '/api/restore', headers: { 'Content-Type': 'application/json' }, body: '{}' },
     judge: (r) => ({ pass: r.status === 401, actual: brief(r) }) });
-  await live(ctx, { step: 10, kind: 'forbidden', request: 'DELETE /api/restore', expected: '405',
+  await live(ctx, { step: 10, kind: 'forbidden', request: 'DELETE /api/restore', attackId: 'restore_wrong_method', expected: '405',
     req: { method: 'DELETE', path: '/api/restore' }, judge: (r) => ({ pass: r.status === 405, actual: brief(r) }) });
   await live(ctx, { step: 11, kind: 'normal', request: 'GET /manifest.webmanifest', expected: '200 · 앱 이름과 standalone',
     req: { path: '/manifest.webmanifest' }, judge: (r) => {
       const ok = r.status === 200 && typeof r.json?.name === 'string' && r.json?.display === 'standalone';
       return { pass: ok, actual: `${r.status} · name ${r.json?.name ? '있음' : '없음'} · display ${r.json?.display ?? '?'}` };
     } });
-  await live(ctx, { step: 11, kind: 'forbidden', request: 'GET /api/device (로그인 없음)', expected: '401',
+  await live(ctx, { step: 11, kind: 'forbidden', request: 'GET /api/device (로그인 없음)', attackId: 'device_status_without_login', expected: '401',
     req: { path: '/api/device' }, judge: (r) => ({ pass: r.status === 401, actual: brief(r) }) });
-  await live(ctx, { step: 11, kind: 'forbidden', request: 'POST /api/device (로그인 없음)', expected: '401',
+  await live(ctx, { step: 11, kind: 'forbidden', request: 'POST /api/device (로그인 없음)', attackId: 'device_request_without_login', expected: '401',
     req: { method: 'POST', path: '/api/device', headers: { 'Content-Type': 'application/json' }, body: '{}' },
     judge: (r) => ({ pass: r.status === 401, actual: brief(r) }) });
   await live(ctx, { step: 12, kind: 'normal', request: 'GET /api/ops', expected: '200 · 요약 형식(aleph.ops.summary.v1)',
@@ -180,11 +182,11 @@ async function accountRows(ctx) {
     skip: needA ?? (idA ? null : 'A의 승인 상태가 아니거나 메모가 없어 자기 메모 ID를 얻지 못함'),
     req: { path: `/api/notes/${idA}`, token: tokenA },
     judge: (r) => ({ pass: r.status === 200 && r.json?.id === idA, actual: `${brief(r)} · id 일치 ${r.json?.id === idA}` }) });
-  await live(ctx, { step: 4, kind: 'forbidden', request: 'B가 A의 메모 GET /api/notes/:id', expected: '404(존재도 숨김)',
+  await live(ctx, { step: 4, kind: 'forbidden', request: 'B가 A의 메모 GET /api/notes/:id', attackId: 'cross_owner_note_read', expected: '404(존재도 숨김)',
     skip: needB ?? (idA ? null : 'A의 메모 ID를 얻지 못함'),
     req: { path: `/api/notes/${idA}`, token: tokenB },
     judge: (r) => ({ pass: r.status === 404, actual: brief(r) }) });
-  await live(ctx, { step: 4, kind: 'forbidden', request: 'B의 GET /api/notes 목록에 A의 메모가 섞였는지', expected: '200 · A의 메모 ID 0건',
+  await live(ctx, { step: 4, kind: 'forbidden', request: 'B의 GET /api/notes 목록에 A의 메모가 섞였는지', attackId: 'cross_owner_list_mix', expected: '200 · A의 메모 ID 0건',
     skip: needB ?? (idsA.length ? null : 'A의 메모 ID를 얻지 못해 섞임을 확인할 수 없음'),
     req: { path: '/api/notes', token: tokenB },
     judge: (r) => {
@@ -230,7 +232,7 @@ async function localRows(ctx) {
 // 자동으로 실행하지 않는 것은 사유와 함께 미실행으로 남깁니다.
 function notRunFixedRows(ctx) {
   const fixed = [
-    { step: 4, kind: 'forbidden', request: 'B가 A의 메모 PUT·DELETE', expected: '404',
+    { step: 4, kind: 'forbidden', request: 'B가 A의 메모 PUT·DELETE', attackId: 'cross_owner_note_write', expected: '404',
       reason: '거부되지 않으면 실제로 자료가 바뀌는 요청이라 자동 실행하지 않음' },
     { step: 10, kind: 'normal', request: 'POST /api/restore 복구 적용', expected: '200 · 한 건만 복구',
       reason: '자료를 바꾸는 요청이라 자동 실행하지 않음(직접 확인 절차는 README)' },
@@ -303,11 +305,11 @@ export function renderMarkdown(report) {
     '- 요청 ID는 이 절차가 요청마다 만들어 `X-Request-Id`로 보낸 값이고, 서버 ID는 응답의 `x-vercel-id`입니다(Vercel 로그에서 찾는 값).',
     '- 로컬 가상 실행 행은 판정기·탐지기 함수를 가상 입력으로 실행한 결과이며 실제 API 응답이 아닙니다.',
     '',
-    '| # | 단계 | 구분 | 요청 | 기대 결과 | 실제 결과 | 요청 ID | 서버 ID | 확인 시각 | 판정 | 근거 |',
-    '|---|---|---|---|---|---|---|---|---|---|---|',
+    '| # | 단계 | 구분 | 공격 ID | 요청 | 기대 결과 | 실제 결과 | 요청 ID | 서버 ID | 확인 시각 | 판정 | 근거 |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
   );
   for (const r of report.rows) {
-    lines.push(`| ${r.no} | ${r.step} | ${KIND_LABEL[r.kind]} | ${cell(r.request)} | ${cell(r.expected)} | ${cell(r.actual)} | ${cell(r.requestId)} | ${cell(r.serverId)} | ${cell(r.at)} | ${RESULT_LABEL[r.result]} | ${EVIDENCE_LABEL[r.evidence]} |`);
+    lines.push(`| ${r.no} | ${r.step} | ${KIND_LABEL[r.kind]} | ${cell(r.attackId)} | ${cell(r.request)} | ${cell(r.expected)} | ${cell(r.actual)} | ${cell(r.requestId)} | ${cell(r.serverId)} | ${cell(r.at)} | ${RESULT_LABEL[r.result]} | ${EVIDENCE_LABEL[r.evidence]} |`);
   }
   lines.push('');
   return lines.join('\n');
