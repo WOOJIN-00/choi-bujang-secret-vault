@@ -38,6 +38,9 @@
     .device { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #16273a; }
     .device h2 { margin: 0 0 10px; font-size: 18px; }
     .device .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #22364d; color: #8ad8df; border: 1px solid #51667c; }
+    .device .badge.ok { color: #9be6a8; border-color: #3f7a4c; }
+    .device .badge.wait { color: #ffeeb0; border-color: #c9a227; }
+    .device button { padding: 10px 16px; border-radius: 10px; border: 0; background: #8ad8df; color: #0a1420; font-size: 15px; font-weight: 700; cursor: pointer; }
     .muted { color: #93a6bd; font-size: 14px; }
     .offline { border-color: #c9a227; color: #ffeeb0; background: #4a3c0f55; }
   </style>
@@ -52,10 +55,12 @@
       오프라인입니다. 자료 보기·복구 같은 보호 요청은 연결이 돌아온 뒤 서버·판정기 확인을 거쳐 처리됩니다.
     </div>
 
-    <section class="device" aria-live="polite">
-      <h2>기기 승인 상태</h2>
-      <p><span id="device-mode" class="badge">확인 중…</span></p>
-      <p class="muted" id="device-note">앱을 설치했다는 표시만으로 이 기기가 승인된 것은 아닙니다. 승인 여부는 <strong style="display:inline;color:#ecf4ff;">서버와 판정기</strong>가 보호 요청마다 정합니다. 기기 키·토큰은 이 화면의 저장소에 넣지 않습니다.</p>
+    <section class="device" id="device-section" aria-live="polite" hidden>
+      <h2>기기 승인</h2>
+      <p><span id="device-mode" class="badge">확인 중…</span> <span id="device-state" class="badge">승인 상태 확인 중…</span></p>
+      <p class="muted" id="device-note">앱을 설치했다는 표시만으로 이 기기가 승인된 것은 아닙니다. 승인 여부는 <strong style="display:inline;color:#ecf4ff;">서버</strong>가 정하며, 승인 전에는 자료실이 열리지 않습니다. 기기 키·토큰은 이 화면의 저장소에 넣지 않습니다.</p>
+      <button id="device-request-btn" type="button" hidden>이 기기 승인 요청</button>
+      <p id="device-msg" class="muted" role="status"></p>
     </section>
 
     <section class="auth" aria-live="polite">
@@ -79,8 +84,10 @@
       </div>
     </section>
 
-    <div class="notice">자료는 로그인한 사용자에게만 보입니다. 로그인 없이 <code>/api/notes</code>를 호출하면 서버가 토큰을 검사해 거부합니다.</div>
-    <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    <section id="vault" hidden>
+      <div class="notice">자료는 로그인하고 <strong style="display:inline;color:#ecf4ff;">서버가 승인한 기기</strong>에서만 보입니다. 로그인 없이 또는 미승인 기기로 <code>/api/notes</code>를 호출하면 서버가 거부하거나 자료를 비웁니다.</div>
+      <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    </section>
   </main>
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
@@ -92,6 +99,17 @@
     const userBox = document.querySelector('#user-box');
     const userEmail = document.querySelector('#user-email');
     const logoutBtn = document.querySelector('#logout-btn');
+    const deviceSection = document.querySelector('#device-section');
+    const deviceState = document.querySelector('#device-state');
+    const deviceBtn = document.querySelector('#device-request-btn');
+    const deviceMsg = document.querySelector('#device-msg');
+    const vault = document.querySelector('#vault');
+
+    // 로그인 토큰을 Authorization 헤더로만 보냅니다(기기 키는 저장하지 않음).
+    async function authHeaders() {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : null;
+    }
 
     // 공개 설정(Supabase URL·publishable 키)은 화면 코드에 두지 않고 서버 함수에서 받아옵니다.
     let supabase;
@@ -106,7 +124,7 @@
       throw error;
     }
 
-    // 로그인 여부에 따라 화면 상태를 바꿉니다.
+    // 로그인 여부에 따라 로그인/사용자 영역을 바꿉니다.
     function renderAuth(session) {
       const user = session?.user ?? null;
       if (user) {
@@ -119,6 +137,61 @@
         userBox.hidden = true;
       }
     }
+
+    // 로그인 + '서버가 승인한 기기'일 때만 자료실을 엽니다.
+    // 승인 여부는 서버(GET /api/device)가 정합니다. 버튼 클릭·저장소로 승인하지 않습니다.
+    async function refreshDevice(session) {
+      if (!session?.user) {
+        deviceSection.hidden = true;
+        vault.hidden = true;
+        return;
+      }
+      deviceSection.hidden = false;
+      deviceState.textContent = '승인 상태 확인 중…';
+      deviceState.className = 'badge wait';
+      try {
+        const headers = await authHeaders();
+        const res = await fetch('/api/device', { cache: 'no-store', headers });
+        if (!res.ok) throw new Error('승인 상태를 확인하지 못했습니다.');
+        const { approved, requested } = await res.json();
+        if (approved) {
+          deviceState.textContent = '승인된 기기';
+          deviceState.className = 'badge ok';
+          deviceBtn.hidden = true;
+          deviceMsg.textContent = '';
+          vault.hidden = false;
+          await loadNotes();            // 승인된 뒤에만 자료를 불러옵니다.
+        } else {
+          deviceState.textContent = requested ? '승인 대기 중' : '미승인';
+          deviceState.className = 'badge wait';
+          deviceBtn.hidden = false;
+          deviceMsg.textContent = requested
+            ? '승인 요청이 접수됐습니다. 서버가 이 기기를 승인하면 자료실이 열립니다.'
+            : '이 기기는 아직 승인되지 않아 자료가 보이지 않습니다.';
+          vault.hidden = true;          // 승인 전에는 자료실을 열지 않습니다(자료 없음).
+        }
+      } catch (error) {
+        deviceState.textContent = '확인 실패';
+        deviceState.className = 'badge wait';
+        deviceMsg.textContent = error.message;
+        vault.hidden = true;
+      }
+    }
+
+    // '승인 요청' 버튼: 요청만 서버에 보냅니다(권한을 주지 않음). 승인은 서버가 따로 합니다.
+    deviceBtn.addEventListener('click', async () => {
+      deviceMsg.textContent = '승인 요청을 보내는 중…';
+      try {
+        const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+        const res = await fetch('/api/device', { method: 'POST', headers, body: '{}' });
+        if (!res.ok && res.status !== 202) throw new Error('요청을 보내지 못했습니다.');
+      } catch (error) {
+        deviceMsg.textContent = error.message;
+        return;
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      await refreshDevice(session); // 요청 뒤 다시 서버에서 상태 확인(여전히 미승인이면 자료실 닫힘).
+    });
 
     // 공식 SDK 흐름만 사용합니다. 비밀번호·JWT를 직접 만들지 않습니다.
     loginForm.addEventListener('submit', async (event) => {
@@ -178,11 +251,11 @@
       }
     }
 
-    // 로그인/로그아웃 등 상태 변화에 맞춰 화면과 자료를 갱신합니다.
-    supabase.auth.onAuthStateChange((_event, session) => { renderAuth(session); loadNotes(); });
+    // 로그인/로그아웃 등 상태 변화에 맞춰 화면·승인 상태·자료를 갱신합니다.
+    supabase.auth.onAuthStateChange((_event, session) => { renderAuth(session); refreshDevice(session); });
     const { data: { session } } = await supabase.auth.getSession();
     renderAuth(session);
-    await loadNotes();
+    await refreshDevice(session);
 
     // 11단계: 오프라인 안내. 연결 상태만 화면에 알리고, 보호 판단은 하지 않습니다.
     const offlineBanner = document.querySelector('#offline');

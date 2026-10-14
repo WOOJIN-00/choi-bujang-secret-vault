@@ -6,6 +6,7 @@
 import { authenticate, readTitleBody, toItem, UUID } from '../_notes.js';
 import { resourceForRequest, tagResponse, memoResourceId } from '../_resources.js';
 import { authorizeMemo } from '../_authz.js';
+import { deviceApproved } from '../_device.js';
 
 export default async function handler(request, response) {
   // 8단계: 이 요청의 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모 한 건 = my-notes 구역).
@@ -19,6 +20,13 @@ export default async function handler(request, response) {
   const id = request.query?.id;
   if (typeof id !== 'string' || !UUID.test(id)) {
     response.status(400).json({ error: 'INVALID_ID' });
+    return;
+  }
+
+  // 11단계: 승인된 기기만 자료실을 엽니다. 미승인은 조회를 숨겨 404, 쓰기는 403.
+  if (!(await deviceApproved(supabase, ownerId))) {
+    if (request.method === 'GET') { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+    response.status(403).json({ error: 'DEVICE_NOT_APPROVED' });
     return;
   }
 
