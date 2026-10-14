@@ -22,7 +22,7 @@ export function maskId(value) {
 }
 
 // 판정기 가상 요청(engine 공개 입력 모양과 같음). 실제 접속 요청이 아니라 가상 입력입니다.
-function virtualRequest(overrides) {
+export function virtualRequest(overrides) {
   return {
     schema: 'aleph.decision.v1', requestId: randomUUID(), classId: 'class_fixture',
     projectId: 'project_fixture', subjectId: 'learner_fixture', deviceId: 'a'.repeat(16),

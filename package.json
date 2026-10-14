@@ -14,6 +14,8 @@
     "policy:restore": "node scripts/policy-restore.mjs",
     "restore:test": "node scripts/restore-test.mjs",
     "ops:test": "node scripts/ops-test.mjs",
+    "retest": "node scripts/retest.mjs",
+    "retest:test": "node scripts/retest-test.mjs",
     "xdr:run": "node scripts/xdr-run.mjs"
   },
   "engines": {
