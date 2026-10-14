@@ -1,7 +1,9 @@
--- 10단계(제안, SQL만): 비공개 가상 메모 '사본(백업)' 테이블과 복원 감사 테이블을 만듭니다.
+-- 10단계(제안, SQL만): 복원 감사 테이블(restore_audit)과 옛 DB 사본 테이블(secret_notes_backup)을 만듭니다.
 -- Supabase SQL Editor에 붙여넣고 Run 하세요. 이 파일에는 비밀번호·토큰·키·실제 본문을 넣지 않습니다.
--- 사본은 앱(api/notes.js)이 메모 생성(POST /api/notes) 시점에 자동으로 채웁니다.
--- 아래 3)의 초기 담기는 '이미 있던 메모'도 사본에 넣기 위한 선택 단계입니다(없어도 동작).
+-- 현재 복구(api/restore.js)가 쓰는 것은 restore_audit(복구 1건마다 기록을 추가) 하나입니다.
+--   복구할 사본은 DB가 아니라 저장소의 backups/*.json이며 backups/manifest.json의 해시로 검증합니다.
+-- secret_notes_backup과 아래 3)의 담기는 10단계 초기 방식(DB 사본)의 흔적이고, 현재 코드는 쓰지 않습니다.
+--   복구 동작에는 필요 없으니 만들어도 되고 건너뛰어도 됩니다.
 
 -- 내용 해시(SHA-256)에 필요한 확장. Supabase는 extensions 스키마에 둡니다.
 create extension if not exists pgcrypto with schema extensions;
