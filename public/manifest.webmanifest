@@ -1,0 +1,16 @@
+{
+  "name": "BYTE BACK 내 자료실",
+  "short_name": "내 자료실",
+  "description": "로그인한 내 가상 자료만 보는 보호된 자료실. 설치는 승인이 아니며, 기기 승인은 서버와 판정기가 정합니다.",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#101a28",
+  "theme_color": "#101a28",
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+  ]
+}

@@ -3,7 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BYTE BACK | 점령된 자료실</title>
+  <title>BYTE BACK 내 자료실</title>
+  <meta name="description" content="로그인한 내 가상 자료만 보는 보호된 자료실. 설치형 접속 앱.">
+  <!-- 11단계: 설치형 웹앱 설정. 설치는 승인이 아니며, 기기 승인은 서버·판정기가 정합니다. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#101a28">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="내 자료실">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     [hidden] { display: none !important; }
@@ -26,13 +35,28 @@
     .auth-error { margin: 4px 0 0; color: #ffb3c1; font-size: 14px; min-height: 1.2em; }
     .user-box { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .user-box span { color: #8ad8df; font-weight: 700; }
+    .device { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #16273a; }
+    .device h2 { margin: 0 0 10px; font-size: 18px; }
+    .device .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #22364d; color: #8ad8df; border: 1px solid #51667c; }
+    .muted { color: #93a6bd; font-size: 14px; }
+    .offline { border-color: #c9a227; color: #ffeeb0; background: #4a3c0f55; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 3단계 로그인</div>
-    <h1>점령된 자료실</h1>
-    <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+    <div class="eyebrow">BYTE BACK · 설치형 접속 앱</div>
+    <h1>내 자료실</h1>
+    <p>로그인한 내 가상 자료만 보이는 보호된 자료실입니다. 홈 화면에 설치해 앱처럼 열 수 있습니다. 아래 기록은 모두 실습용 가상 자료입니다.</p>
+
+    <div id="offline" class="notice offline" role="status" hidden>
+      오프라인입니다. 자료 보기·복구 같은 보호 요청은 연결이 돌아온 뒤 서버·판정기 확인을 거쳐 처리됩니다.
+    </div>
+
+    <section class="device" aria-live="polite">
+      <h2>기기 승인 상태</h2>
+      <p><span id="device-mode" class="badge">확인 중…</span></p>
+      <p class="muted" id="device-note">앱을 설치했다는 표시만으로 이 기기가 승인된 것은 아닙니다. 승인 여부는 <strong style="display:inline;color:#ecf4ff;">서버와 판정기</strong>가 보호 요청마다 정합니다. 기기 키·토큰은 이 화면의 저장소에 넣지 않습니다.</p>
+    </section>
 
     <section class="auth" aria-live="polite">
       <h2>로그인</h2>
@@ -159,6 +183,22 @@
     const { data: { session } } = await supabase.auth.getSession();
     renderAuth(session);
     await loadNotes();
+
+    // 11단계: 오프라인 안내. 연결 상태만 화면에 알리고, 보호 판단은 하지 않습니다.
+    const offlineBanner = document.querySelector('#offline');
+    const syncOnline = () => { offlineBanner.hidden = navigator.onLine; };
+    window.addEventListener('online', syncOnline);
+    window.addEventListener('offline', syncOnline);
+    syncOnline();
+
+    // 11단계: 기기 승인 상태 표시. '설치 여부'만 알려 주고, 그것이 '승인'이 아님을 분명히 합니다.
+    // 승인 여부는 서버·판정기가 보호 요청 때 정하며, 기기 키·토큰을 브라우저 저장소에 넣지 않습니다.
+    const deviceMode = document.querySelector('#device-mode');
+    const installed = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    deviceMode.textContent = installed
+      ? '설치형 앱으로 실행 중 · 승인은 별도(서버·판정기가 확인)'
+      : '브라우저로 실행 중 · 승인은 서버·판정기가 확인';
   </script>
 </body>
 </html>
