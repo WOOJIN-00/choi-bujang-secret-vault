@@ -119,6 +119,11 @@ function isAllowedRoute({ method, segments }) {
     if (segments.length !== 1 && segments.length !== 2) return false;
     return method === 'GET';
   }
+  // 자료 복구(10단계): 사본에서 지정한 메모 한 건을 되살리는 POST /restore 한 모양만 허용.
+  //   다른 메서드·하위 경로는 거부. 주인 대조·사본 검증은 판정기가 아니라 API(api/restore.js)가 합니다.
+  if (segments[0] === 'restore') {
+    return segments.length === 1 && method === 'POST';
+  }
   // 강사 자료·알 수 없는 경로: 거부.
   return false;
 }

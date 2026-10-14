@@ -11,6 +11,7 @@
     "detect:test": "node scripts/detect-test.mjs",
     "fixture:7": "node scripts/fixture-7.mjs",
     "policy:diff": "node scripts/policy-diff.mjs",
+    "restore:test": "node scripts/restore-test.mjs",
     "xdr:run": "node scripts/xdr-run.mjs"
   },
   "engines": {
