@@ -1,0 +1,17 @@
+{
+  "schema": "aleph.notes.backup.v1",
+  "version": "verified-2026-10-14",
+  "verifiedAt": "2026-10-14T00:00:00.000Z",
+  "note": "침해 전에 검증한 시험 계정 B의 가상 메모 사본입니다. 실습용 가상 자료이며 실제 학생 자료가 아닙니다. 복구는 이 사본을 manifest.json으로 재검증한 뒤에만 수행합니다.",
+  "notes": [
+    {
+      "id": "58ff58af-110f-4f64-b829-594f4e048827",
+      "ownerKey": "b",
+      "ownerId": "a2939090-e643-412f-9c81-bcbe760e4c61",
+      "resourceId": "res:my-notes:note:58ff58af-110f-4f64-b829-594f4e048827",
+      "title": "B 시험 메모",
+      "content": "실습용 가상 시험 메모 (B 소유)",
+      "contentSha256": "6b7622aafdadef51d3e711518e597c6aabdce20f7ba4a7cd5d9688e8779fe233"
+    }
+  ]
+}

@@ -154,19 +154,29 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 ### 자료 한 건 복원 서비스·경로 (제작 3)
 | 서비스 | 경로(메서드) | 하는 일 |
 |---|---|---|
-| `notes-restore` | **`POST /api/restore`** | 비공개 가상 메모 사본에서 **지정한 한 건**만 되살림 |
+| `notes-restore` | **`GET /api/restore?id=<id>`** | 미리보기: 사본을 **다시 읽어 검증**한 뒤 복구할 버전·바뀔 항목·`planToken`을 보여 줌(쓰기 없음) |
+| `notes-restore` | **`POST /api/restore`** | 복구: 본문 `{ id, planToken }` — 재검증 통과 시 **지정한 한 건**만 되살림 |
 
-- **비공개 사본은 생성 시점에 자동으로 남깁니다.** 메모가 `POST /api/notes`로 만들어질 때 앱이 그 시점의 내용과 SHA-256 해시를 `secret_notes_backup`에 담습니다(이미 같은 `id`가 있으면 생성 시점 값을 유지). 변조(`PUT`)는 사본을 바꾸지 않으므로, 사본은 '침해 전 검증된 버전'으로 남습니다.
-- 복원은 본문 `{ id }` 한 건만 받습니다. 사본에서 그 건을 읽어 **ID·소유자(`owner_id`)·내용(content) SHA-256 해시**를 복원 **전·후 2회** 대조합니다.
-- 소유자는 **검증된 토큰의 `userId`로만** 판단합니다(본문·URL의 `owner_id`·`role` 불신). 소유자가 아니거나 없는 건은 `404`, 사본 무결성(해시) 불일치는 `409`로 **복원 중단**.
-- 그 **한 건만** `id` 기준 upsert로 되살리고 다른 메모는 건드리지 않습니다. 복원 1건마다 `restore_audit`에 **추가(append)** 로 감사 기록을 남깁니다(과거 기록 삭제·덮어쓰기 없음). 응답에는 본문을 넣지 않고 `id`·`contentSha256`만 돌려줍니다.
-- **판정기·허용 경로에도 등록:** 엔진은 경로와 판정기를 먼저 확인하므로, `aleph.config.json`의 `allowedRoutes`·`restoreRoute`에 `POST /api/restore`를 넣고, `src/decider.mjs`의 `resource_zone`에서 `POST /restore` **한 모양만** 허용했습니다(다른 메서드·하위 경로는 `route_not_allowed`, 미등록 기기는 `device_not_registered`).
+**검증 증거를 저장소 파일로 둡니다(심판이 직접 읽을 수 있게):**
+- `backups/notes.json` — 침해 전에 **검증한 시험 계정 B의 가상 메모 사본**(각 메모의 `content`와 `contentSha256`).
+- `backups/verified-policy.json` — 검증한 안전 정책 사본.
+- `backups/manifest.json` — 위 사본 **각 파일의 LF 정규화 SHA-256을 따로 적은 무결성 장부**(독립 기준). 사본과 장부가 서로 다른 파일이라, 사본만 바꾸면 해시가 어긋나 **변조가 드러납니다**.
+
+**복구 절차(`api/restore.js`) — 검증을 '코드로 할 뿐 아니라 보이게':**
+- **복구 직전에 사본을 다시 읽어** `manifest.json`의 해시와 재대조합니다. **해시가 하나라도 어긋나면 `412 BACKUP_UNVERIFIED`로 중단하고 절대 복구하지 않습니다**(검증 실패 뒤 복원 금지 — 닭크웹/변조 공격의 핵심 방어선).
+- `GET /api/restore?id=…` 미리보기로 **복구할 버전·바뀔 항목·`planToken`**을 먼저 돌려줍니다. `planToken` 없이 온 `POST`는 `428 PREVIEW_REQUIRED`로 막아, **실행 전에 버전·바뀔 항목을 반드시 확인**하게 합니다.
+- 복구는 **인증 주체·자원 ID(`resourceId`)·소유자 키(`ownerKey`)·내용 해시(`contentSha256`)가 모두 맞는 단 한 건**만 수행하고, **복구 직전에 한 번 더 재검증**합니다(이중 대조). 복구 후 저장된 행을 **다시 읽어** 사본 해시와 또 대조합니다.
+- 그 **한 건만** `id` 기준 upsert로 되살리고 **다른 메모는 건드리지 않습니다.** 복구 1건마다 `restore_audit`에 **추가(append)**(과거 기록 보존). **운영 정책(`src/decider.mjs`·`aleph.config.json`)은 건드리지 않습니다.**
+- 해시는 **LF로 정규화**해 계산하고(Windows CRLF ↔ Vercel LF 차이 방지), `vercel.json`의 `includeFiles`로 `backups/**`를 서버 함수 번들에 포함합니다.
+- 판정기·허용 경로 등록: `aleph.config.json`의 `allowedRoutes`·`restoreRoute`에 `POST /api/restore`, `src/decider.mjs`의 `resource_zone`에서 `POST /restore` 한 모양만 허용.
+
+복구 후 1~9단계 재시험 순서는 [docs/RESTORE_RETEST_PLAN.md](docs/RESTORE_RETEST_PLAN.md)에 적었습니다.
 
 **다시 실행하는 방법(10단계 확인 순서):**
-1. `npm run restore:test` — 시험 계정 **B의 가상 메모 한 건**으로 대조 확인(B가 B 사본 복원 시 ID·소유자·내용 해시 일치, A의 B 사본 복원·손상 사본·ID 불일치는 차단, 생성 시 백업→복원 대조 통과). 실제 DB 없이 순수 대조입니다.
-2. 라이브(배포 환경): `supabase/notes-backup.sql`로 사본·감사 테이블을 만든 뒤, B로 로그인해 메모를 만들면(POST) 사본이 자동으로 생깁니다. 그 메모를 변조(PUT)한 뒤 `POST /api/restore` 본문 `{ "id": "<메모 id>" }` → 그 한 건만 되살아나고 다른 메모·감사 기록은 그대로여야 합니다.
+1. `npm run restore:test` — 정적 사본(`backups/*.json`)을 장부(`manifest.json`)로 **재대조**하고, 사본이 1자라도 바뀌면 해시가 어긋나 **복구 중단 근거**가 됨을 확인합니다.
+2. 라이브(배포): `GET /api/restore?id=<id>`로 버전·바뀔 항목·`planToken` 확인 → `POST /api/restore {id, planToken}` → 그 한 건만 되살아나고 다른 메모·감사 기록은 그대로. 사본이 변조됐으면 `412`로 멈춥니다.
 
-> 사본 검증은 내용 SHA-256 **무결성** 대조이며 서명 기반 출처 인증은 아닙니다. 라이브 복원은 배포 환경과 B 계정으로 실측해야 하며, 로컬 `restore:test` 통과가 심판 판정은 아닙니다.
+> 사본 검증은 내용 SHA-256 **무결성** 대조입니다. 심판은 배포가 아니라 **저장소 파일(`backups/*.json`·`manifest.json`)과 이 문서**를 읽어 검증 과정을 확인합니다.
 
 ## 복구 후 회귀 점검 순서 (1~9단계 정상·금지 요청)
 

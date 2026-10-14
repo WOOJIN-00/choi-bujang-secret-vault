@@ -5,7 +5,6 @@
 import { authenticate, readTitleBody, toItem } from './_notes.js';
 import { resourceForRequest, tagResponse, memoResourceId } from './_resources.js';
 import { authorizeMemo } from './_authz.js';
-import { saveVerifiedBackup } from './_restore.js';
 
 export default async function handler(request, response) {
   // 8단계: 요청마다 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모는 my-notes 구역).
@@ -51,16 +50,6 @@ export default async function handler(request, response) {
       console.error('notes: 추가하지 못했습니다.');
       response.status(502).json({ error: 'NOTES_WRITE_FAILED' });
       return;
-    }
-    // 10단계: 생성 시점의 검증된 사본을 남깁니다(복원의 비공개 사본). 최선 노력 — 실패해도 생성은 유지.
-    try {
-      const { error: backupError } = await saveVerifiedBackup(supabase,
-        { id: data.id, owner_id: ownerId, title: input.title, content: input.body });
-      if (backupError) console.error('notes: 사본 저장 실패(생성은 유지, 운영자 확인 필요).');
-      console.log(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=${!backupError}`);
-    } catch {
-      console.error('notes: 사본 저장 중 예외(생성은 유지).');
-      console.log(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=false(exception)`);
     }
     response.status(201).json({ ...toItem(data), resourceId: memoResourceId(data.id) });
     return;

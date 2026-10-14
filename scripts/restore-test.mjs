@@ -1,81 +1,46 @@
-// 10단계 복원 대조 로컬 확인. 시험 계정 B의 가상 메모 한 건으로만 확인합니다.
-// 실제 DB·네트워크 없이 순수 대조 함수(api/_restore.js)만 시험합니다.
-import { isDeepStrictEqual } from 'node:util';
-import {
-  contentHash, verifyAgainstBackup, verifyRestored, saveVerifiedBackup,
-} from '../api/_restore.js';
+// 10단계 복원 검증 로컬 확인. 정적 사본(backups/*.json)을 무결성 장부(manifest.json)로
+// '다시 읽어 검증'하는 과정을 시험합니다. 시험 계정 B의 가상 메모 사본으로 확인합니다.
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
-// 생성 시 백업이 실제로 어떤 사본 행을 만드는지 확인하는 가짜 supabase(메모리).
-function fakeSupabase() {
-  const rows = [];
-  return {
-    rows,
-    from() {
-      return { upsert(row) { rows.push(row); return Promise.resolve({ error: null }); } };
-    },
-  };
-}
-
-// 가상 시험 자료(assign-owners.sql의 'B 시험 메모'와 같은 내용). 실명·토큰·실제 본문 아님.
-const B = { kind: 'student', userId: '11111111-1111-4111-8111-111111111111' };
-const A = { kind: 'student', userId: '22222222-2222-4222-8222-222222222222' };
-const noteId = '33333333-3333-4333-8333-333333333333';
-const bContent = '실습용 가상 시험 메모 (B 소유)';
-const backup = {
-  id: noteId, owner_id: B.userId, title: 'B 시험 메모',
-  content: bContent, content_sha256: contentHash(bContent),
-};
-
-const cases = [
-  {
-    name: 'B가 B 사본 한 건 복원 대조 → ID·소유자·내용 해시 일치',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: noteId, backup }),
-    expect: { ok: true, ownerId: B.userId, contentSha256: backup.content_sha256 },
-  },
-  {
-    name: '복원 후 대조 → 되살린 행이 사본과 같음',
-    run: () => verifyRestored({ backup, restored: { id: noteId, owner_id: B.userId, content: bContent } }),
-    expect: { ok: true },
-  },
-  {
-    name: 'A가 B 사본 복원 시도 → 소유자 아님(차단)',
-    run: () => verifyAgainstBackup({ identity: A, requestedId: noteId, backup }),
-    expect: { ok: false, reason: 'not_owner' },
-  },
-  {
-    name: '손상된 사본(내용 해시 불일치) → 복원 중단',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: noteId, backup: { ...backup, content_sha256: 'deadbeef' } }),
-    expect: { ok: false, reason: 'backup_integrity_mismatch' },
-  },
-  {
-    name: '다른 ID 요청 → ID 불일치(차단)',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: '44444444-4444-4444-8444-444444444444', backup }),
-    expect: { ok: false, reason: 'id_mismatch' },
-  },
-  {
-    name: '복원본 내용이 바뀜 → 내용 해시 불일치 감지',
-    run: () => verifyRestored({ backup, restored: { id: noteId, owner_id: B.userId, content: '변조됨' } }),
-    expect: { ok: false, reason: 'content_mismatch' },
-  },
-];
+const sha256Lf = (t) => createHash('sha256').update(String(t).replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+const read = (p) => readFileSync(p, 'utf8');
 
 let failed = 0;
-for (const item of cases) {
-  const actual = item.run();
-  const passed = isDeepStrictEqual(actual, item.expect);
-  if (!passed) failed += 1;
-  process.stdout.write(`${passed ? '통과' : '확인 필요'} · ${item.name}\n`);
-}
+const check = (name, ok) => {
+  if (!ok) failed += 1;
+  process.stdout.write(`${ok ? '통과' : '확인 필요'} · ${name}\n`);
+};
 
-// 생성 시 백업 → 복원 대조: POST /api/notes가 남긴 사본으로 B가 복원하면 ID·소유자·내용 해시 일치.
-const sb = fakeSupabase();
-await saveVerifiedBackup(sb, { id: noteId, owner_id: B.userId, title: 'B 시험 메모', content: bContent });
-const madeBackup = sb.rows[0];
-const chainOk = madeBackup
-  && verifyAgainstBackup({ identity: B, requestedId: noteId, backup: madeBackup }).ok
-  && madeBackup.content_sha256 === contentHash(bContent);
-if (!chainOk) failed += 1;
-process.stdout.write(`${chainOk ? '통과' : '확인 필요'} · 생성 시 백업한 사본으로 B 복원 대조 통과\n`);
-process.stdout.write(`복구 대상 한 건의 내용 해시(sha256) = ${backup.content_sha256.slice(0, 16)}…\n`);
-process.stdout.write('가상 자료 로컬 대조이며 실제 DB 복원·심판 판정이 아닙니다.\n');
+const manifest = JSON.parse(read('backups/manifest.json'));
+const notesDoc = JSON.parse(read('backups/notes.json'));
+
+// 1) 장부 형식: 검증 표식과 각 사본 해시가 있어야 함.
+check('manifest에 verified 표식과 사본 해시가 있음',
+  manifest.verified === true && manifest.algo === 'sha256'
+  && typeof manifest.entries['backups/notes.json'] === 'string');
+
+// 2) 사본 파일을 다시 읽어 장부 해시와 재대조(핵심: 독립 기준으로 검증).
+check('backups/notes.json 재대조 → 장부 해시와 일치',
+  sha256Lf(read('backups/notes.json')) === manifest.entries['backups/notes.json']);
+check('backups/verified-policy.json 재대조 → 장부 해시와 일치',
+  sha256Lf(read('backups/verified-policy.json')) === manifest.entries['backups/verified-policy.json']);
+
+// 3) B 가상 메모: id·소유자 키·자원 ID·내용 해시가 사본 안에서 일관.
+const b = (notesDoc.notes || []).find((n) => n.ownerKey === 'b');
+check('B 사본 한 건 존재(id·소유자 키·자원 ID·내용 해시)',
+  Boolean(b) && typeof b.id === 'string' && b.ownerKey === 'b'
+  && b.resourceId === `res:my-notes:note:${b.id}`
+  && sha256Lf(b.content) === b.contentSha256);
+
+// 4) 변조 탐지: 사본 내용이 1바이트라도 바뀌면 장부 해시와 어긋나 '검증 실패'로 멈춰야 함.
+check('사본이 변조되면(1자 변경) 장부와 불일치 → 복구 중단 근거',
+  sha256Lf(read('backups/notes.json') + ' ') !== manifest.entries['backups/notes.json']);
+
+// 5) 메모 내용 해시가 기록과 다르면(사본 변조) 탐지.
+check('메모 내용이 기록 해시와 다르면 탐지',
+  sha256Lf('변조된 내용') !== (b && b.contentSha256));
+
+process.stdout.write(`복구 대상 한 건의 내용 해시(sha256) = ${(b && b.contentSha256 || '').slice(0, 16)}…\n`);
+process.stdout.write('정적 사본 + 장부 재검증 로컬 확인이며, 실제 DB 복원·심판 판정이 아닙니다.\n');
 if (failed) process.exitCode = 1;

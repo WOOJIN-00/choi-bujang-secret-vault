@@ -1,0 +1,12 @@
+{
+  "schema": "aleph.backup.manifest.v1",
+  "verified": true,
+  "verifiedAt": "2026-10-14T00:00:00.000Z",
+  "algo": "sha256",
+  "normalization": "lf",
+  "note": "각 사본 파일의 LF 정규화 SHA-256을 따로 적은 무결성 장부. 복구 직전 재대조하며, 하나라도 어긋나면 412로 중단합니다.",
+  "entries": {
+    "backups/notes.json": "e4b822d4f4fdc77faf24ea637cd01892e19be4e05c180b4ed1da2a78f00718a8",
+    "backups/verified-policy.json": "abc174e9112e66c474a4d25c3e336a1e92fdc627e3893a8c4a05b8ef706c0c6f"
+  }
+}
