@@ -90,24 +90,33 @@ export default async function handler(request, response) {
   }
 
   // 4-b) 적용: 그 한 건만 되살립니다(id 기준 upsert). 사본 값만 쓰고, 다른 행은 건드리지 않습니다.
-  const { data: restored, error: writeError } = await supabase
+  const { error: writeError } = await supabase
     .from('secret_notes')
     .upsert(
       { id: backup.id, owner_id: backup.owner_id, title: backup.title, content: backup.content },
       { onConflict: 'id' },
-    )
-    .select('id, owner_id, content')
-    .single();
+    );
   if (writeError) {
     console.error('restore: 되살리지 못했습니다.');
     response.status(502).json({ error: 'RESTORE_WRITE_FAILED' });
     return;
   }
 
-  // 5) 복원 후 대조: 되살린 한 건이 사본과 ID·소유자·내용 해시까지 같은지 확인.
-  const verified = verifyRestored({ backup, restored });
+  // 5) 복원 후 '다시 읽어' 검증: upsert 반환값을 믿지 않고, 저장된 행을 새로 조회해 사본과 대조합니다.
+  //    (사본을 기준으로 재조회·재검증 → 검증을 통과하지 못하면 성공으로 보고하지 않습니다.)
+  const { data: reread, error: rereadError } = await supabase
+    .from('secret_notes')
+    .select('id, owner_id, content')
+    .eq('id', backup.id)
+    .maybeSingle();
+  if (rereadError) {
+    console.error('restore: 복원 후 재조회 실패.');
+    response.status(502).json({ error: 'RESTORE_REREAD_FAILED' });
+    return;
+  }
+  const verified = verifyRestored({ backup, restored: reread });
   if (!verified.ok) {
-    console.error(`restore: 복원 결과 대조 실패(${verified.reason}).`);
+    console.error(`restore: 복원 결과 재검증 실패(${verified.reason}).`);
     response.status(500).json({ error: 'RESTORE_VERIFY_FAILED' });
     return;
   }
