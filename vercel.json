@@ -6,6 +6,9 @@
   "functions": {
     "api/restore.js": {
       "includeFiles": "backups/**"
+    },
+    "api/ops.js": {
+      "includeFiles": "backups/**"
     }
   },
   "headers": [

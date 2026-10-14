@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>탈환 작전실</title>
+  <meta name="theme-color" content="#101a28">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100vh; background: #101a28; color: #ecf4ff; }
+    main { max-width: 860px; margin: 0 auto; padding: 36px 22px 64px; }
+    .eyebrow { color: #8ad8df; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+    h1 { margin: 12px 0; font-size: clamp(28px, 6vw, 42px); }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    p { line-height: 1.7; color: #bfd0e5; }
+    a { color: #8ad8df; }
+    section { margin: 18px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #16273a; }
+    .muted { color: #93a6bd; font-size: 14px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid #51667c; background: #22364d; margin-right: 6px; }
+    .confirmed { color: #9be6a8; border-color: #3f7a4c; }
+    .virtual { color: #8ad8df; border-color: #3b7a85; }
+    .not_run { color: #ffeeb0; border-color: #c9a227; }
+    .bad { color: #ffb3c1; border-color: #d07384; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #2a3d54; vertical-align: top; }
+    th { color: #8ad8df; font-weight: 700; }
+    ul.plain { margin: 6px 0 0; padding-left: 20px; color: #bfd0e5; line-height: 1.7; }
+    code { background: #0e1824; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+    button { padding: 9px 16px; border-radius: 10px; border: 0; background: #8ad8df; color: #0a1420; font-weight: 700; cursor: pointer; }
+    #status { margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">BYTE BACK · 12단계</div>
+    <h1>탈환 작전실</h1>
+    <p>서버가 <strong>방금 실제로 읽거나 실행한 결과</strong>만 보여 줍니다. 이 화면의 문구는 통과 근거가 아닙니다. 가상 메모 본문·토큰·소유자 ID는 표시하지 않습니다. <a href="/">내 자료실로 돌아가기</a></p>
+
+    <p>
+      <span class="badge confirmed">확인됨</span><span class="muted">서버가 이 응답에서 실제로 읽거나 실행</span><br>
+      <span class="badge virtual">가상 실행</span><span class="muted">가상 입력으로 실행한 연습 결과(실제 접속 사건 아님)</span><br>
+      <span class="badge not_run">미실행</span><span class="muted">아직 연결·실행하지 않음(성공으로 표시하지 않음)</span>
+    </p>
+
+    <p><button id="reload" type="button">다시 불러오기</button> <span id="status" class="muted" role="status">불러오는 중…</span></p>
+
+    <div id="board" hidden>
+      <section id="s-rules"></section>
+      <section id="s-decider"></section>
+      <section id="s-detect"></section>
+      <section id="s-revocation"></section>
+      <section id="s-restore"></section>
+      <section id="s-records"></section>
+      <section id="s-notrun"></section>
+    </div>
+  </main>
+  <script>
+    // 응답에 있는 값만 그립니다. 응답을 받지 못하면 '확인 불가'로 두고 성공을 보여 주지 않습니다.
+    const LABEL = { confirmed: '확인됨', virtual: '가상 실행', not_run: '미실행' };
+    const $ = (id) => document.getElementById(id);
+
+    function el(tag, text, className) {
+      const node = document.createElement(tag);
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      if (className) node.className = className;
+      return node;
+    }
+    function badge(source) { return el('span', LABEL[source] ?? '확인 불가', `badge ${LABEL[source] ? source : 'bad'}`); }
+    function title(section, text, source) {
+      const h = el('h2'); h.append(badge(source), document.createTextNode(text)); section.append(h);
+    }
+    function table(head, rows) {
+      const t = el('table'); const thead = el('thead'); const hr = el('tr');
+      head.forEach((h) => hr.append(el('th', h))); thead.append(hr); t.append(thead);
+      const tb = el('tbody');
+      rows.forEach((r) => { const tr = el('tr'); r.forEach((c) => tr.append(el('td', c))); tb.append(tr); });
+      t.append(tb); return t;
+    }
+    // 수치와 목록을 화면에서 다시 세어 서로 맞는지 확인합니다.
+    function check(label, shown, counted) {
+      const ok = shown === counted;
+      const p = el('p', `${label}: 화면 수치 ${shown} / 목록에서 센 값 ${counted} → ${ok ? '일치' : '불일치'}`, `muted`);
+      if (!ok) p.className = 'badge bad';
+      return { node: p, ok };
+    }
+    function reset() { ['s-rules','s-decider','s-detect','s-revocation','s-restore','s-records','s-notrun'].forEach((id) => $(id).replaceChildren()); }
+
+    function render(data) {
+      reset();
+      let mismatch = 0;
+
+      // 1) 판정기 규칙
+      const rules = $('s-rules');
+      title(rules, `판정기 규칙 ${data.rules.ruleIds.length}개`, data.rules.source);
+      rules.append(el('p', `규칙 이름: ${data.rules.ruleIds.join(', ')}`));
+      rules.append(el('p', `허용 경로 ${data.rules.allowedRoutes.length}개 · 복구 경로 ${data.rules.restoreRoute ?? '없음'}`, 'muted'));
+
+      // 2) 판정기 가상 실행
+      const dec = $('s-decider');
+      title(dec, `판정기 가상 요청 ${data.decider.counts.matched}/${data.decider.counts.total}건이 기대와 일치`, data.decider.source);
+      dec.append(table(['가상 요청', '기대', '판정', '이유', '일치'],
+        data.decider.cases.map((c) => [c.name, c.expected, c.decision, c.reasonCode, c.matched ? '예' : '아니오'])));
+      const c1 = check('판정기 일치 건수', data.decider.counts.matched, data.decider.cases.filter((c) => c.matched).length);
+      dec.append(c1.node); if (!c1.ok) mismatch += 1;
+
+      // 3) 탐지 사건
+      const det = $('s-detect');
+      title(det, `탐지 가상 사건 ${data.detect.counts.events}건 · 회수 제안 ${data.detect.counts.proposals}건`, data.detect.source);
+      det.append(table(['가상 사건', '건수', '기대', '결과', '사유', '일치'],
+        data.detect.cases.map((c) => [c.name, c.events, c.expected, c.action, c.reasonCode ?? '-', c.matched ? '예' : '아니오'])));
+      const c2 = check('사건 합계', data.detect.counts.events, data.detect.cases.reduce((s, c) => s + c.events, 0));
+      const c3 = check('회수 제안', data.detect.counts.proposals, data.detect.cases.filter((c) => c.action === 'propose_revocation').length);
+      det.append(c2.node, c3.node); if (!c2.ok) mismatch += 1; if (!c3.ok) mismatch += 1;
+      det.append(el('p', '실제 접속 사건이 아니라 가상 사건으로 탐지기를 실행한 결과입니다.', 'muted'));
+
+      // 4) 회수 상태
+      const rev = $('s-revocation');
+      title(rev, '회수 상태', data.revocation.executedSource);
+      const prop = el('p'); prop.append(badge(data.revocation.proposedSource),
+        document.createTextNode(`회수 제안(가상 사건 기준): ${data.revocation.proposed}건`));
+      rev.append(prop);
+      const exec = el('p'); exec.append(badge(data.revocation.executedSource),
+        document.createTextNode(`회수 집행: ${data.revocation.executed === null ? '미실행 — 집행 경로가 연결되지 않아 수치가 없습니다' : data.revocation.executed}`));
+      rev.append(exec);
+      const c4 = check('회수 제안', data.revocation.proposed, data.detect.counts.proposals);
+      rev.append(c4.node); if (!c4.ok) mismatch += 1;
+
+      // 5) 복구 버전
+      const res = $('s-restore');
+      title(res, '복구 버전', data.restore.source);
+      if (data.restore.backupVerified) {
+        res.append(el('p', `사본 검증: 통과 · 자료 사본 버전 ${data.restore.notesVersion ?? '미표기'} · 정책 사본 버전 ${data.restore.policyVersion ?? '미표기'}`));
+        res.append(el('p', `검증한 파일 ${data.restore.verifiedFiles.length}개: ${data.restore.verifiedFiles.join(', ')} · 복구 대상 ${data.restore.targetCount}건`, 'muted'));
+      } else {
+        res.append(el('p', `사본 검증: 실패(${data.restore.reason ?? '사유 없음'}) — 복구하지 않습니다.`, 'badge bad'));
+      }
+
+      // 6) 서버 기록(가림)
+      const rec = $('s-records');
+      title(rec, '서버 기록 · 복구 감사(식별값 가림)', data.records.source);
+      if (!data.records.available) {
+        rec.append(el('p', '서버 기록을 읽지 못했습니다. 건수를 만들어 내지 않고 비워 둡니다.', 'badge bad'));
+      } else {
+        rec.append(el('p', `서버 전체 ${data.records.total}건 · 이 화면에 ${data.records.shown}건 표시(최근 순)`));
+        if (data.records.rows.length) {
+          rec.append(table(['시각', '동작', '메모(가림)'], data.records.rows.map((r) => [r.at ?? '-', r.action ?? '-', r.noteId])));
+        } else {
+          rec.append(el('p', '아직 복구가 실행된 기록이 없습니다.', 'muted'));
+        }
+        const c5 = check('표시 건수', data.records.shown, data.records.rows.length);
+        rec.append(c5.node); if (!c5.ok) mismatch += 1;
+        const c6 = data.records.total >= data.records.shown
+          ? { node: el('p', '서버 전체 건수가 표시 건수 이상 → 일치', 'muted'), ok: true }
+          : { node: el('p', '서버 전체 건수가 표시 건수보다 적음 → 불일치', 'badge bad'), ok: false };
+        rec.append(c6.node); if (!c6.ok) mismatch += 1;
+      }
+
+      // 7) 미실행
+      const nr = $('s-notrun');
+      title(nr, `미실행 ${data.notRun.length}건`, 'not_run');
+      const ul = el('ul', null, 'plain'); data.notRun.forEach((t) => ul.append(el('li', t))); nr.append(ul);
+
+      return mismatch;
+    }
+
+    async function load() {
+      $('status').textContent = '불러오는 중…';
+      $('board').hidden = true;
+      try {
+        const res = await fetch('/api/ops', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
+        const data = await res.json();
+        if (data.schema !== 'aleph.ops.summary.v1') throw new Error('응답 형식이 맞지 않습니다.');
+        const mismatch = render(data);
+        $('board').hidden = false;
+        $('status').textContent = mismatch === 0
+          ? `서버 응답 ${data.generatedAt} 기준 · 화면 수치와 목록이 모두 일치합니다(통과 근거 아님).`
+          : `서버 응답 ${data.generatedAt} 기준 · 수치 불일치 ${mismatch}건이 있습니다.`;
+      } catch (error) {
+        reset();
+        $('board').hidden = true;
+        $('status').textContent = `확인 불가: ${error.message} — 서버 응답이 없어 어떤 결과도 표시하지 않습니다.`;
+      }
+    }
+    $('reload').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>
