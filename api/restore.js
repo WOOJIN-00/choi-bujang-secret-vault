@@ -7,7 +7,7 @@
 import { authenticate } from './_notes.js';
 import { memoResourceId } from './_resources.js';
 import {
-  readRestoreId, verifyAgainstBackup, verifyRestored, buildAuditEntry, contentHash,
+  readRestoreId, verifyAgainstBackup, verifyRestored, buildAuditEntry, contentHash, trace,
 } from './_restore.js';
 
 // 본문에서 preview(미리보기) 요청 여부만 읽습니다. 참이면 적용하지 않고 계획만 보여 줍니다.
@@ -33,6 +33,7 @@ export default async function handler(request, response) {
   const id = readRestoreId(request);
   const preview = wantsPreview(request);
   console.error(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)} preview=${preview}`);
+  await trace(supabase, 'restore_called', `actor=${identity.kind} idOk=${Boolean(id)} preview=${preview}`);
   if (!id) {
     response.status(400).json({ error: 'INVALID_ID' });
     return;
@@ -54,6 +55,7 @@ export default async function handler(request, response) {
   //    (미리보기든 적용이든, 검증을 통과하지 못하면 여기서 멈춥니다.)
   const check = verifyAgainstBackup({ requestedId: id, backup });
   console.error(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
+  await trace(supabase, 'restore_verify', `found=${Boolean(backup)} ok=${check.ok} reason=${check.reason ?? '-'}`);
   if (!check.ok) {
     if (check.reason === 'backup_integrity_mismatch') {
       console.error('restore: 사본 무결성 불일치 → 복원 중단.');
@@ -132,6 +134,7 @@ export default async function handler(request, response) {
     return;
   }
 
+  await trace(supabase, 'restore_applied', `version=${plan.version} changed=${willChange}`);
   console.error(`[S10] restore id=${id} applied verifyAfter=${verified.ok} version=${plan.version} changed=${willChange} → 200`);
   // 본문은 돌려주지 않고, 복구 버전·바뀔 항목과 대조에 쓴 식별값을 돌려줍니다.
   response.status(200).json({

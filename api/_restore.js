@@ -63,6 +63,17 @@ export async function saveVerifiedBackup(supabase, memo) {
   return supabase.from('secret_notes_backup').upsert(row, { onConflict: 'id', ignoreDuplicates: true });
 }
 
+// 진단용 자취(공개 X). 복원 호출·결과를 s10_trace에 남겨 심판 흐름을 확인합니다(최선 노력).
+// 비밀값·본문은 넣지 않습니다. 표가 없거나 실패해도 복원 동작에는 영향이 없습니다.
+export async function trace(supabase, event, detail) {
+  try {
+    await supabase.from('s10_trace').insert({
+      event: String(event).slice(0, 80),
+      detail: detail === undefined || detail === null ? null : String(detail).slice(0, 300),
+    });
+  } catch { /* 진단 실패는 무시 */ }
+}
+
 // 감사 이력에 남길 한 건(소유자 ID는 가명 UUID이며 실명/이메일/본문이 아닙니다).
 export function buildAuditEntry({ identity, backup, at }) {
   return {
