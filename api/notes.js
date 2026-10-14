@@ -57,10 +57,10 @@ export default async function handler(request, response) {
       const { error: backupError } = await saveVerifiedBackup(supabase,
         { id: data.id, owner_id: ownerId, title: input.title, content: input.body });
       if (backupError) console.error('notes: 사본 저장 실패(생성은 유지, 운영자 확인 필요).');
-      console.error(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=${!backupError}`);
+      console.log(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=${!backupError}`);
     } catch {
       console.error('notes: 사본 저장 중 예외(생성은 유지).');
-      console.error(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=false(exception)`);
+      console.log(`[S10] notes POST create id=${data.id} actor=${identity.kind} backupOk=false(exception)`);
     }
     response.status(201).json({ ...toItem(data), resourceId: memoResourceId(data.id) });
     return;
