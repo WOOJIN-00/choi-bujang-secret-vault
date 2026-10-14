@@ -143,10 +143,15 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 ## 10단계 현재 상태 (백업에서 자료실을 되살립니다)
 
-### 정책 차이 미리보기
+### 정책 차이 미리보기 (제작 1)
 - `npm run policy:diff` — 침해 전 검증한 안전 정책 사본(`policy/verified-policy.json`)과 현재 시험 정책(`policy/test-policy.json`)의 **차이만** 표시(읽기 전용). 사본 없음/검증 실패/시험 정책 이상이면 중단. 운영 정책(`decider.mjs`·`aleph.config.json`)은 읽지도 쓰지도 않습니다.
 
-### 자료 한 건 복원 서비스·경로
+### 정책 되돌림 절차 (제작 2)
+- `npm run policy:restore` — 검증 사본 버전으로 시험 정책(`policy/test-policy.json`)을 되돌립니다. **기본은 미리보기**(바뀔 항목만 표시, 쓰기 없음), `-- --apply` 일 때만 적용합니다.
+- 되돌림은 `policy`(ruleIds·allowedRoutes)만 바꾸고 **다른 서비스 규칙(`otherServices` 등)은 보존**합니다. 복원 1건마다 `policy/restore-audit.log`에 **추가(append)** 로 감사 이력을 남깁니다(덮어쓰기 없음). 사본 없음/검증 실패/시험 정책 이상이면 중단합니다.
+- 운영 코드·`aleph.config.json`은 건드리지 않습니다. 복원 뒤에는 `resource_zone` 등 규칙이 돌아와, 판정기 기준 **B의 A 자료 경로(`GET /api/notes` 컬렉션·`/admin/export`)는 다시 `route_not_allowed`로 거부**되고 **A의 단일 자료(`GET /api/notes/:id`)는 `allow`**로 유지됩니다.
+
+### 자료 한 건 복원 서비스·경로 (제작 3)
 | 서비스 | 경로(메서드) | 하는 일 |
 |---|---|---|
 | `notes-restore` | **`POST /api/restore`** | 비공개 가상 메모 사본에서 **지정한 한 건**만 되살림 |
@@ -170,7 +175,7 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 > 아래는 실행 순서와 기대 결과입니다. **작성 시점에 라이브(배포·A/B 계정·Supabase)로 실행하지 않았으므로 상태는 모두 `미실행`입니다.** 실행한 사람이 실제 출력으로 결과를 채우세요. 로컬 스크립트(`decider:test`·`detect:test`·`fixture:7`·`restore:test`)는 **가상 연습**이며 반 엔진·운영 심판의 판정이 아닙니다. 결과를 꾸미지 마세요.
 
 **0. 복구 먼저 (10단계)**
-- 정책 차이 확인: `npm run policy:diff` — 검증 사본과 현재 시험 정책의 차이를 봅니다(미리보기). 정책 되돌림 '적용' 절차는 이 라운드에 아직 없습니다(차이 확인까지).
+- 정책: `npm run policy:diff`로 바뀔 항목을 먼저 보고, `npm run policy:restore -- --apply`로 검증 사본 버전으로 되돌립니다(다른 서비스 규칙·감사 이력 보존).
 - 자료 한 건: B로 로그인 → 메모를 `POST /api/notes`로 만들면 사본이 자동 저장됨 → 그 메모를 변조(`PUT`) → `POST /api/restore` 본문 `{ "id": "<메모 id>" }` → 그 한 건만 되살아나고 다른 메모·감사 기록 보존.
 - 상태: 미실행
 
