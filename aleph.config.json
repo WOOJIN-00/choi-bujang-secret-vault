@@ -1,5 +1,5 @@
 {
-  "step": 10,
+  "step": 9,
   "repoUrl": "https://github.com/WOOJIN-00/choi-bujang-secret-vault",
   "publicAppUrl": "https://choi-bujang-secret-vault-snowy.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -14,9 +14,8 @@
     "PUT /api/notes/:id",
     "DELETE /api/notes/:id",
     "GET /api/notices",
-    "GET /api/notices/:id",
-    "POST /api/restore"
+    "GET /api/notices/:id"
   ],
   "originalApiUrl": "https://gdvnwkwvqmudzoysnlrc.supabase.co/rest/v1/secret_notes",
-  "restoreRoute": "POST /api/restore"
+  "restoreRoute": null
 }

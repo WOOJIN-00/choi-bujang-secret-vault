@@ -141,57 +141,6 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 **단계 번호(`aleph.config.json`의 `step`) 갱신:** 9단계에 맞춰 `step`을 `9`로 올렸습니다. 이에 맞춰 1단계에만 고정돼 있던 `step === 1` 가드(`scripts/build-public.mjs`·`scripts/deployment-identity.mjs`·`src/attack-check.mjs`)를 `1~12` 범위 검사로 바꿔 `npm run build`·`npm run bundle`이 현재 단계에서도 동작하게 했습니다. 공개 `data.json`에는 메모가 없어야 하며(2단계 이후), 배포 식별 `aleph.json`의 `step`도 설정값을 따릅니다. 실제 배포 동작은 `git push` 후 Vercel 재배포로 확인해야 합니다(로컬 빌드만으로는 증명되지 않음).
 
-## 10단계 현재 상태 (백업에서 자료실을 되살립니다)
-
-침해 전에 검증한 안전 사본을 기준으로, 정책과 자료를 **확인 후** 되살립니다. 운영 코드·다른 서비스 규칙·감사 기록은 보존합니다.
-
-### 정책 복원 (선언 정책)
-- `npm run policy:diff` — 검증 사본(`policy/verified-policy.json`)과 현재 시험 정책의 **차이만** 표시(읽기 전용).
-- `npm run policy:restore` — 바뀔 항목 미리보기(쓰기 없음), `-- --apply` 일 때만 `policy/test-policy.json`을 사본 버전으로 되돌림. `otherServices` 등 다른 서비스 규칙 보존, 감사 이력은 `policy/restore-audit.log`에 append. 사본 없음/검증 실패면 중단.
-
-### 자료 한 건 복원 서비스·경로
-| 서비스 | 경로(메서드) | 하는 일 |
-|---|---|---|
-| `notes-restore` | **`POST /api/restore`** | 비공개 가상 메모 사본에서 **지정한 한 건**만 되살림 |
-
-- 본문 `{ id }` 한 건만 받습니다. 서버는 비공개 사본 테이블 `secret_notes_backup`에서 그 건을 읽어 **ID·소유자(`owner_id`)·내용(content) SHA-256 해시**를 사본과 대조합니다.
-- 소유자는 **검증된 토큰의 `userId`로만** 판단합니다(본문·URL의 `owner_id`·`role` 불신). 소유자가 아니거나 없는 건은 `404`, 사본 무결성(해시) 불일치는 `409`로 **복원 중단**.
-- 그 **한 건만** `id` 기준 upsert로 되살리고 다른 메모는 건드리지 않습니다. 복원 후 다시 ID·소유자·해시를 대조해 어긋나면 `500`. 응답에는 메모 본문을 넣지 않고 `id`·`contentSha256`만 돌려줍니다.
-- 복원 1건마다 `restore_audit` 테이블에 **추가(append)** 로 감사 기록을 남깁니다(과거 기록 삭제·덮어쓰기 없음). `aleph.config.json`의 `restoreRoute`에 `POST /api/restore` 기록.
-- **판정기·허용 경로에도 등록:** 엔진은 요청을 앱에 넘기기 전에 경로와 판정기를 먼저 확인합니다. 그래서 `allowedRoutes`에 `POST /api/restore`를 추가하고, `src/decider.mjs`의 `resource_zone`에서 `POST /restore` **한 모양만** 허용했습니다(다른 메서드·하위 경로는 계속 `route_not_allowed`, 미등록 기기는 `device_not_registered`). 처음 제출(커밋 `9dbaf1b`)에서는 이 등록이 빠져 심판의 복구 요청이 앱에 도달하지 못했고(Vercel 로그에 심판의 `/api/restore` 요청 없음), `S10_BACKUP_UNVERIFIED`로 판정됐습니다.
-- 정책을 의도적으로 바꿨으므로 검증 정책 사본(`policy/verified-policy.json`, 버전 `verified-stage10-restore-route`)과 시험 정책 기준선을 다시 찍었습니다. 재기준 전 `policy:diff`가 새 경로를 차이로 정확히 표시하는 것을 확인했습니다.
-
-**다시 실행하는 방법(10단계 확인 순서):**
-1. `npm run restore:test` — 시험 계정 **B의 가상 메모 한 건**으로 대조 확인(B가 B 사본 복원 시 ID·소유자·내용 해시 일치, A의 B 사본 복원·손상 사본·ID 불일치는 차단). 실제 DB 없이 순수 대조 확인입니다.
-2. 라이브 확인(배포 환경): `supabase/notes-backup.sql`을 **안전한 시점에** 실행해 비공개 사본+감사 테이블을 만든 뒤, B로 로그인해 `POST /api/restore` 본문 `{ "id": "<B 메모 id>" }` 요청 → 그 한 건만 되살아나고 다른 메모·감사 기록은 그대로여야 합니다.
-
-> 사본 검증은 내용 SHA-256 **무결성**(손상/형식) 대조이며 서명 기반 출처 인증은 아닙니다. 라이브 복원은 배포 환경과 B 계정으로 실측해야 하며, 로컬 `restore:test` 통과가 심판 판정은 아닙니다.
-
-## 복구 후 회귀 점검 순서 (1~9단계 정상·금지 요청)
-
-복구가 끝나면 아래 순서로 각 단계의 **정상 요청(통과해야 함)** 과 **금지 요청(다시 거부돼야 함)** 을 함께 실행해, 자료·정책이 돌아오고 이전에 막던 요청이 **다시 거부**되는지 봅니다.
-
-> 아래는 실행 순서와 기대 결과입니다. **작성 시점에 라이브(배포·A/B 계정·Supabase)로 실행하지 않았으므로 상태는 모두 `미실행`입니다.** 실행한 사람이 실제 출력으로 결과를 채우세요. 로컬 스크립트(`decider:test`·`detect:test`·`fixture:7`·`restore:test`)는 **가상 연습**이며 반 엔진·운영 심판의 판정이 아닙니다. 결과를 꾸미지 마세요.
-
-**0. 복구 먼저 (10단계)**
-- 정책: `npm run policy:restore -- --apply` (사본 없음/검증 실패면 중단) → 시험 정책이 검증 사본 버전으로 복귀.
-- 자료 한 건: B로 로그인 → `POST /api/restore` 본문 `{ "id": "<B 메모 id>" }` → 그 한 건만 되살아나고 다른 메모·감사 기록 보존.
-- 상태: 미실행
-
-| 순서 | 단계 | 정상 요청(통과) | 금지 요청(다시 거부) | 상태 |
-|---|---|---|---|---|
-| 1 | 공개 노출 차단 | `curl -s https://<배포>/` → 화면 200 | `curl -s https://<배포>/data.json` → `"notes": []`, 메모 문장 없음 | 미실행 |
-| 2 | 서버 함수 경유 | 로그인 A → 화면에 A 메모 표시(서버 함수) | 비로그인 `GET /api/notes` → `401` | 미실행 |
-| 3 | 로그인 토큰 검사 | A 정상 로그인 → `GET /api/notes` `200` | 토큰 없음/위조 → `401` (본문 `userId`·`role` 무시) | 미실행 |
-| 4 | 소유자 격리 | A가 자기 메모 `GET /api/notes/:id` → `200` | B가 A 메모 `GET·PUT·DELETE /api/notes/:idA` → `404`, 소유자 변경 무시 | 미실행 |
-| 5 | 원본 직접 차단 | 화면 A 동작(서버 함수 경유) | anon 키로 원본 `/rest/v1/secret_notes` 직접 요청 → 거부 | 미실행 |
-| 6 | 등록 기기만 | `deviceRegistered=true` → `allow` (로컬 `npm run decider:test`) | 미등록/값 없음 → `deny` `device_not_registered` | 미실행 |
-| 7 | 복합 이상 추가확인 | 정상 사건 → `allow` (로컬 `npm run fixture:7`) | 복합 이상(시각+네트워크+폭주) → `step_up` (지역 하나로는 안 막음) | 미실행 |
-| 8 | 자원 구역/경로 | `GET /api/notes/:id` → `allow` (로컬 `npm run decider:test`) | `GET /api/notes`(컬렉션)·공지 쓰기·강사/알 수 없는 경로 → `deny` `route_not_allowed` | 미실행 |
-| 9 | 폭주 조회 탐지 | 정상 조회 → `observe` (로컬 `npm run detect:test`) | 같은 사용자 10분 내 120건 초과 → `propose_revocation` `burst_read` | 미실행 |
-
-실행 뒤 각 행의 `상태`를 실제 출력(HTTP 코드·판정 값)으로 바꾸고, 실행하지 않은 행은 `미실행`으로 남겨 두세요.
-
 ## 보너스 xdr-01 현재 상태 (무차별 로그인 공격 탐지)
 
 `xdr/brute-force/`에 Wazuh 경보(MITRE ATT&CK T1110) 기반 무차별 로그인 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.

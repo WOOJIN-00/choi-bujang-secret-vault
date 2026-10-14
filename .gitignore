@@ -6,4 +6,3 @@ node_modules/
 public/aleph.json
 xdr/alerts.log
 xdr/*/result.json
-policy/restore-audit.log
