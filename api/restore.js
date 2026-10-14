@@ -1,8 +1,9 @@
 // 자료 복원 API (한 건): POST /api/restore
 //   본문 { id }           → 사본에서 그 한 건을 되살립니다(적용).
 //   본문 { id, preview:true } → 적용하지 않고 '복구 버전·바뀔 항목'만 보여 줍니다(실행 전 확인).
-//   ID·소유자·내용 해시를 사본과 대조하고, 다른 메모와 감사 기록은 보존합니다.
-//   소유자는 검증된 토큰의 userId로만 판단합니다(본문/URL의 owner_id·role 불신).
+//   복구는 '백업 검증'으로 판단합니다: 사본의 ID·내용 SHA-256 해시가 맞아야 복원하고,
+//   사본에 기록된 '원래 소유자' 그대로 되살립니다(소유자를 바꾸지 않고, 본문은 응답에 안 담음).
+//   로그인은 필요하지만 복구 대상의 소유자여야 하는 것은 아닙니다(복구=백업 무결성 기준).
 import { authenticate } from './_notes.js';
 import { memoResourceId } from './_resources.js';
 import {
@@ -51,7 +52,7 @@ export default async function handler(request, response) {
 
   // 2) 복원 전 대조: ID·소유자·내용 해시. 손상 사본이면 중단, 그 외 불일치는 404로 숨김.
   //    (미리보기든 적용이든, 검증을 통과하지 못하면 여기서 멈춥니다.)
-  const check = verifyAgainstBackup({ identity, requestedId: id, backup });
+  const check = verifyAgainstBackup({ requestedId: id, backup });
   console.error(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
   if (!check.ok) {
     if (check.reason === 'backup_integrity_mismatch') {

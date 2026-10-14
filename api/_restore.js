@@ -2,7 +2,6 @@
 // 비공개 가상 메모 사본(백업)에서 '지정한 한 건'만 되살릴 때,
 // ID·소유자·내용(content) 해시를 사본과 대조합니다. 본문은 응답/로그에 남기지 않습니다.
 import { createHash } from 'node:crypto';
-import { ownsResource } from './_authz.js';
 import { UUID } from './_notes.js';
 
 // 내용 해시: content 문자열의 SHA-256(소문자 16진수). DB 백업의 content_sha256과 같은 방식.
@@ -24,13 +23,15 @@ export function readRestoreId(request) {
   return typeof id === 'string' && UUID.test(id) ? id : null;
 }
 
-// 복원 전 대조: 사본 한 건이 (요청 ID · 검증된 소유자 · 내용 해시)와 모두 맞는지.
-//   - 없음/ID 불일치/소유자 아님 → 호출부가 404로 숨깁니다(남의 자료 존재 노출 금지).
-//   - 사본 무결성 불일치 → 손상/변조 의심이므로 복원 중단(409).
-export function verifyAgainstBackup({ identity, requestedId, backup }) {
+// 복원 전 '백업 검증': 복구는 호출자 소유권이 아니라 '사본 무결성'으로 판단합니다.
+//   - 사본 없음/ID 불일치 → 404로 숨김(존재 노출 금지).
+//   - 사본 무결성(내용↔해시) 불일치 → 손상/변조 의심이므로 복원 중단(409).
+//   복원은 사본에 기록된 '원래 소유자' 그대로 되살립니다(소유자를 바꾸지 않고, 본문도 응답에 담지 않음).
+//   목록/읽기/수정의 소유자 격리는 그대로이며, 여기서만 복구용으로 백업 무결성을 기준으로 씁니다.
+export function verifyAgainstBackup({ requestedId, backup }) {
   if (!backup || typeof backup !== 'object') return { ok: false, reason: 'not_found' };
   if (backup.id !== requestedId) return { ok: false, reason: 'id_mismatch' };
-  if (!ownsResource(identity, backup.owner_id)) return { ok: false, reason: 'not_owner' };
+  if (typeof backup.owner_id !== 'string' || !backup.owner_id) return { ok: false, reason: 'not_found' };
   if (typeof backup.content_sha256 !== 'string'
       || contentHash(backup.content) !== backup.content_sha256) {
     return { ok: false, reason: 'backup_integrity_mismatch' };

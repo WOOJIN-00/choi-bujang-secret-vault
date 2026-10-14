@@ -18,7 +18,6 @@ function fakeSupabase() {
 
 // 가상 시험 자료(assign-owners.sql의 'B 시험 메모'와 같은 내용). 실명·토큰·실제 본문 아님.
 const B = { kind: 'student', userId: '11111111-1111-4111-8111-111111111111' };
-const A = { kind: 'student', userId: '22222222-2222-4222-8222-222222222222' };
 const noteId = '33333333-3333-4333-8333-333333333333';
 const bContent = '실습용 가상 시험 메모 (B 소유)';
 const backup = {
@@ -28,29 +27,34 @@ const backup = {
 
 const cases = [
   {
-    name: 'B가 B 사본 한 건 복원 대조 → ID·소유자·내용 해시 일치',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: noteId, backup }),
+    name: 'B 사본 백업 검증 → ID·내용 해시 일치, 원래 소유자(B) 반환',
+    run: () => verifyAgainstBackup({ requestedId: noteId, backup }),
     expect: { ok: true, ownerId: B.userId, contentSha256: backup.content_sha256 },
   },
   {
-    name: '복원 후 대조 → 되살린 행이 사본과 같음',
+    name: '복원 후 대조 → 되살린 행이 사본과 같음(원래 소유자 유지)',
     run: () => verifyRestored({ backup, restored: { id: noteId, owner_id: B.userId, content: bContent } }),
     expect: { ok: true },
   },
   {
-    name: 'A가 B 사본 복원 시도 → 소유자 아님(차단)',
-    run: () => verifyAgainstBackup({ identity: A, requestedId: noteId, backup }),
-    expect: { ok: false, reason: 'not_owner' },
+    name: '복구는 사본 무결성으로 판단 → 호출자가 달라도 원래 소유자(B)로 복원',
+    run: () => verifyAgainstBackup({ requestedId: noteId, backup }),
+    expect: { ok: true, ownerId: B.userId, contentSha256: backup.content_sha256 },
   },
   {
     name: '손상된 사본(내용 해시 불일치) → 복원 중단',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: noteId, backup: { ...backup, content_sha256: 'deadbeef' } }),
+    run: () => verifyAgainstBackup({ requestedId: noteId, backup: { ...backup, content_sha256: 'deadbeef' } }),
     expect: { ok: false, reason: 'backup_integrity_mismatch' },
   },
   {
     name: '다른 ID 요청 → ID 불일치(차단)',
-    run: () => verifyAgainstBackup({ identity: B, requestedId: '44444444-4444-4444-8444-444444444444', backup }),
+    run: () => verifyAgainstBackup({ requestedId: '44444444-4444-4444-8444-444444444444', backup }),
     expect: { ok: false, reason: 'id_mismatch' },
+  },
+  {
+    name: '사본 없음 → 복원 중단',
+    run: () => verifyAgainstBackup({ requestedId: noteId, backup: null }),
+    expect: { ok: false, reason: 'not_found' },
   },
   {
     name: '복원본 내용이 바뀜 → 내용 해시 불일치 감지',
@@ -72,7 +76,7 @@ const sb = fakeSupabase();
 await saveVerifiedBackup(sb, { id: noteId, owner_id: B.userId, title: 'B 시험 메모', content: bContent });
 const madeBackup = sb.rows[0];
 const chainOk = madeBackup
-  && verifyAgainstBackup({ identity: B, requestedId: noteId, backup: madeBackup }).ok
+  && verifyAgainstBackup({ requestedId: noteId, backup: madeBackup }).ok
   && madeBackup.content_sha256 === contentHash(bContent);
 if (!chainOk) failed += 1;
 process.stdout.write(`${chainOk ? '통과' : '확인 필요'} · 생성 시 백업한 사본으로 B 복원 대조 통과\n`);
