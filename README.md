@@ -211,6 +211,7 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 
 ### 기기 승인 흐름 (제작 2)
 - **승인은 서버가 정합니다.** 승인 여부는 서버 표 `device_approvals`에서만 읽고, **버튼 클릭·브라우저 저장소로 승인하지 않습니다.** 승인 근거는 서버 표에만 두고 브라우저 저장소·화면·Git·제출물에는 두지 않으며, 승인은 검증된 사용자 신원(`userId`)으로 식별합니다.
+- **로그인 토큰도 브라우저 저장소에 넣지 않습니다.** 화면의 Supabase 클라이언트를 `persistSession: false`로 만들어 세션을 **메모리에만** 둡니다(기본값은 `localStorage`에 `sb-…-auth-token`으로 저장되므로 바꿨습니다). 대신 **새로고침하면 다시 로그인**해야 합니다. 로컬에서 SDK를 브라우저 환경으로 흉내 내 측정하면 기본값은 localStorage 1개(토큰 포함), `persistSession:false`는 0개였습니다.
 - `GET /api/device` → 이 기기의 승인 상태(`{ approved, requested }`). `POST /api/device` → 승인 **요청만 기록**(`202`), `approved`는 서버/관리자가 `device-approvals.sql`로 따로 `true`로 바꿉니다.
 - **승인 전에는 자료실을 열지 않습니다.** 화면은 `GET /api/device`가 `approved:true`일 때만 자료(`/api/notes`)를 불러옵니다. 심층 방어로 서버도 미승인 기기에는 `/api/notes` GET을 **빈 목록(`deviceApproved:false`)**, 쓰기를 `403`, 단일 자료(`/api/notes/:id`) 조회를 `404`로 막습니다.
 - 기존 보호(로그인 토큰 검사·소유자 격리)는 그대로이고, **승인된 기기에서는 기존 화면이 정상**입니다.
