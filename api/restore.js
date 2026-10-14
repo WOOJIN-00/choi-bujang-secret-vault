@@ -21,6 +21,7 @@ export default async function handler(request, response) {
   const { identity, supabase } = auth;
 
   const id = readRestoreId(request);
+  console.log(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)}`);
   if (!id) {
     response.status(400).json({ error: 'INVALID_ID' });
     return;
@@ -40,6 +41,7 @@ export default async function handler(request, response) {
 
   // 2) 복원 전 대조: ID·소유자·내용 해시. 손상 사본이면 중단, 그 외 불일치는 404로 숨김.
   const check = verifyAgainstBackup({ identity, requestedId: id, backup });
+  console.log(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
   if (!check.ok) {
     if (check.reason === 'backup_integrity_mismatch') {
       console.error('restore: 사본 무결성 불일치 → 복원 중단.');
@@ -84,6 +86,7 @@ export default async function handler(request, response) {
     return;
   }
 
+  console.log(`[S10] restore id=${id} applied verifyAfter=${verified.ok} → 200`);
   // 본문은 돌려주지 않고, 대조에 쓴 식별값만 반환합니다.
   response.status(200).json({
     id: restored.id,
