@@ -31,7 +31,7 @@ export default async function handler(request, response) {
 
   const id = readRestoreId(request);
   const preview = wantsPreview(request);
-  console.log(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)} preview=${preview}`);
+  console.error(`[S10] restore POST actor=${identity.kind} idOk=${Boolean(id)} preview=${preview}`);
   if (!id) {
     response.status(400).json({ error: 'INVALID_ID' });
     return;
@@ -52,7 +52,7 @@ export default async function handler(request, response) {
   // 2) 복원 전 대조: ID·소유자·내용 해시. 손상 사본이면 중단, 그 외 불일치는 404로 숨김.
   //    (미리보기든 적용이든, 검증을 통과하지 못하면 여기서 멈춥니다.)
   const check = verifyAgainstBackup({ identity, requestedId: id, backup });
-  console.log(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
+  console.error(`[S10] restore id=${id} backupFound=${Boolean(backup)} verifyOk=${check.ok} reason=${check.reason ?? '-'}`);
   if (!check.ok) {
     if (check.reason === 'backup_integrity_mismatch') {
       console.error('restore: 사본 무결성 불일치 → 복원 중단.');
@@ -84,7 +84,7 @@ export default async function handler(request, response) {
 
   // 4-a) 미리보기: 실행 전에 버전과 바뀔 항목만 보여 주고, 아무것도 적용하지 않습니다.
   if (preview) {
-    console.log(`[S10] restore id=${id} preview version=${plan.version} willChange=${willChange} → 200(no-apply)`);
+    console.error(`[S10] restore id=${id} preview version=${plan.version} willChange=${willChange} → 200(no-apply)`);
     response.status(200).json({ ...plan, preview: true, applied: false });
     return;
   }
@@ -122,7 +122,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  console.log(`[S10] restore id=${id} applied verifyAfter=${verified.ok} version=${plan.version} changed=${willChange} → 200`);
+  console.error(`[S10] restore id=${id} applied verifyAfter=${verified.ok} version=${plan.version} changed=${willChange} → 200`);
   // 본문은 돌려주지 않고, 복구 버전·바뀔 항목과 대조에 쓴 식별값을 돌려줍니다.
   response.status(200).json({
     ...plan,

@@ -61,9 +61,9 @@ export default async function handler(request, response) {
       try {
         const { error: backupError } = await saveVerifiedBackup(supabase,
           { id: current.id, owner_id: current.owner_id, title: current.title, content: current.content });
-        console.log(`[S10] notes PUT pre-backup id=${id} backupOk=${!backupError}`);
+        console.error(`[S10] notes PUT pre-backup id=${id} backupOk=${!backupError}`);
       } catch {
-        console.log(`[S10] notes PUT pre-backup id=${id} backupOk=false(exception)`);
+        console.error(`[S10] notes PUT pre-backup id=${id} backupOk=false(exception)`);
       }
     }
     // owner_id = 내 id 조건: 기존 행이 내 것일 때만 수정되고, owner_id는 그대로 둬 소유자가 바뀌지 않습니다.
