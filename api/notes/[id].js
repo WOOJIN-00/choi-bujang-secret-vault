@@ -6,6 +6,7 @@
 import { authenticate, readTitleBody, toItem, UUID } from '../_notes.js';
 import { resourceForRequest, tagResponse, memoResourceId } from '../_resources.js';
 import { authorizeMemo } from '../_authz.js';
+import { saveVerifiedBackup } from '../_restore.js';
 
 export default async function handler(request, response) {
   // 8단계: 이 요청의 자원 구역/ID를 먼저 정해 응답에 표시합니다(메모 한 건 = my-notes 구역).
@@ -48,6 +49,23 @@ export default async function handler(request, response) {
   if (request.method === 'PUT') {
     const input = readTitleBody(request);
     if (!input) { response.status(400).json({ error: 'INVALID_BODY' }); return; }
+    // 10단계: 수정(변조) 전에 현재 '좋은' 버전을 사본에 확보합니다(이미 있으면 생성 시점 값 유지).
+    //   내 소유 행만 읽어 백업하고(심층 방어), 실패해도 수정은 그대로 진행합니다(최선 노력).
+    const { data: current } = await supabase
+      .from('secret_notes')
+      .select('id, title, content, owner_id')
+      .eq('id', id)
+      .eq('owner_id', ownerId)
+      .maybeSingle();
+    if (current && authorizeMemo(identity, current.owner_id).ok) {
+      try {
+        const { error: backupError } = await saveVerifiedBackup(supabase,
+          { id: current.id, owner_id: current.owner_id, title: current.title, content: current.content });
+        console.log(`[S10] notes PUT pre-backup id=${id} backupOk=${!backupError}`);
+      } catch {
+        console.log(`[S10] notes PUT pre-backup id=${id} backupOk=false(exception)`);
+      }
+    }
     // owner_id = 내 id 조건: 기존 행이 내 것일 때만 수정되고, owner_id는 그대로 둬 소유자가 바뀌지 않습니다.
     const { data, error } = await supabase
       .from('secret_notes')
