@@ -218,8 +218,23 @@ const rowBy = (report, text) => report.rows.find((r) => r.request.includes(text)
   const down = await withServer(fakeServer({ networkDown: true }));
   check('네트워크 끊김: 모든 점검이 not_run이고 결과를 만들지 않음', down.length > 0 && down.every((a) => a.observed === 'not_run') && shapeOk(down));
 
+  // 전역 crypto가 없는 환경(구형 Node, 제한된 실행기): 심판 실행기에서 randomUUID 오류로 bundle이 멈췄던 상황
+  const cryptoSlot = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true, writable: true });
+  let legacy;
+  try { legacy = await withServer(fakeServer()); } finally {
+    if (cryptoSlot) Object.defineProperty(globalThis, 'crypto', cryptoSlot); else delete globalThis.crypto;
+  }
+  const legacySent = legacy.filter((a) => a.observed !== 'not_run');
+  const legacyIds = legacySent.map((a) => (a.observed.match(/요청 ID ([0-9a-f-]{36})/) ?? [])[1]);
+  check('전역 crypto가 없는 환경에서도 점검이 멈추지 않고 같은 수의 요청을 보냄',
+    shapeOk(legacy) && legacySent.length === sent.length && legacySent.length > 0);
+  check('전역 crypto가 없어도 요청 ID가 UUID 모양이고 서로 다름',
+    legacyIds.every((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id ?? ''))
+    && new Set(legacyIds).size === legacyIds.length);
+
   check('점검 목록에 토큰·비밀번호·공개 키·이메일이 없음',
-    ![TOKEN_A, TOKEN_B, PASS_A, PASS_B, 'sb_publishable_FAKEKEY', 'a@example.test', 'b@example.test'].some((t) => JSON.stringify([ok, leaky, down]).includes(t)));
+    ![TOKEN_A, TOKEN_B, PASS_A, PASS_B, 'sb_publishable_FAKEKEY', 'a@example.test', 'b@example.test'].some((t) => JSON.stringify([ok, leaky, down, legacy]).includes(t)));
 }
 
 check('설정의 원본 자료 API 주소와 공개 앱 주소가 비어 있지 않음', typeof aleph.originalApiUrl === 'string' && typeof aleph.publicAppUrl === 'string');
