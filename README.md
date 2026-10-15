@@ -399,3 +399,16 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 **다시 실행하는 방법:** `npm run xdr:run -- known-cve` → `xdr/known-cve/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/known-cve/respond.mjs`, 경보 확인은 `node xdr/known-cve/read-alerts.mjs`.
 
 **작성 시점 로컬 확인(가상 경보 24건):** counts `block 8 / alert 8 / record 8`, 정상 이벤트(T1190 아님) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
+
+## 보너스 xdr-04 현재 상태 (몰래 심어진 프로그램 탐지)
+
+`xdr/persistence/`에 Wazuh 경보(MITRE ATT&CK T1543 서비스 생성·변경, T1053 예약 작업) 기반 몰래 심어진 프로그램 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
+
+- `patterns.json` — 근거(T1543·T1053) 있는 패턴 4종: 서명 없는 새 서비스 등록, 낯선 예약 작업, 시작 폴더에 낯선 프로그램 추가, 여러 지속 수단이 같은 임시 파일을 가리킴. 시작 폴더 패턴은 경보 묶음이 T1543으로 표시한 것을 따랐고, 정식 기법 번호는 T1547.001임을 근거 줄에 밝혔습니다. 실제 파일 경로 예시는 적지 않았습니다.
+- `decide.mjs` — 패턴을 상수로 담고 `decide(alert) → { action: block|alert|record, confidence, reason }`. 임계값 0.85 block / 0.5 alert / 그 아래 record. import·파일 I/O·네트워크 없이 경보 하나로 혼자 판단. 서비스·예약 작업·시작 위치가 나오고 위험 신호(서명 없음·낯섦·임시 폴더·수업 시간 밖·반복·설치)가 2점 이상 겹칠 때만 block이고, 신호가 하나뿐이거나 약하면 alert(0.85 미만), 서명된 기존 항목 같은 정상 표지가 있으면 record입니다. "등록은 없습니다" 같은 부정문은 신호로 세지 않습니다.
+- `respond.mjs` — block 후보만 골라 출발 주소(srcip) 기준 거부 규칙(만료 시각·근거 경보 번호 포함)으로 내보내고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓음(`module=persistence`). 계정이 아니라 주소만 막고, 정상 사용자가 함께 쓴 주소에는 규칙을 넣지 않음. 규칙은 목록으로만 돌려주며 판정기에 직접 걸리지는 않습니다.
+- `read-alerts.mjs` — 경보 확인용(판정기·decide가 import 하지 않음). 시각·출발 주소·계정·수준·설명만 뽑고 `data.path`(파일 경로)는 뽑지 않습니다.
+
+**다시 실행하는 방법:** `npm run xdr:run -- persistence` → `xdr/persistence/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/persistence/respond.mjs`, 경보 확인은 `node xdr/persistence/read-alerts.mjs`.
+
+**작성 시점 로컬 확인(가상 경보 24건):** counts `block 8 / alert 8 / record 8`, 정상 이벤트(ps-17~24) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 판정은 경보 설명의 한국어 문장에 기대고 있어, 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
