@@ -73,7 +73,8 @@ async function probe(app, check) {
     const text = await response.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* JSON이 아닌 응답 */ }
-    return { status: response.status, json, requestId, at };
+    const serverId = (response.headers.get('x-vercel-id') || '').slice(0, 80);
+    return { status: response.status, json, requestId, serverId, at };
   } catch {
     return null;
   }
@@ -108,7 +109,7 @@ export async function runAttackChecks(config) {
     attempts.push({
       attackId: check.attackId,
       expected,
-      observed: cut(`HTTP ${result.status}${code}${verdict.detail ? ` · ${verdict.detail}` : ''} · ${verdict.ok ? '기대와 같음' : '기대와 다름(실패)'} · 요청 ID ${result.requestId} · 확인 시각 ${result.at}`),
+      observed: cut(`HTTP ${result.status}${code}${verdict.detail ? ` · ${verdict.detail}` : ''} · ${verdict.ok ? '기대와 같음' : '기대와 다름(실패)'} · 요청 ID ${result.requestId}${result.serverId ? ` · 서버 ID ${result.serverId}` : ''} · 확인 시각 ${result.at}`),
     });
   }
   return attempts;
