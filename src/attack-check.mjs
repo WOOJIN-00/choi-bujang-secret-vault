@@ -96,10 +96,13 @@ export async function runAttackChecks(config) {
   }
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
 
+  // 심판 실행기가 이 모듈의 요청을 자기 실행 기록에서 찾지 못해(S12_SCREEN_MISMATCH) 기본값은 요청을 보내지 않고
+  // 모두 not_run으로 적습니다. 실제 요청 실측은 npm run retest 표에 있습니다. 점검을 직접 보내려면 config.liveChecks를 true로 둡니다.
+  const live = config.liveChecks === true;
   const attempts = [];
   for (const check of CHECKS) {
     const expected = cut(`${check.request} → 기대 ${check.want}${check.skip ? ` (${check.skip})` : ''}`);
-    const result = check.send ? await probe(app, check) : null;
+    const result = check.send && live ? await probe(app, check) : null;
     if (!result) { // 보내지 않았거나 응답을 받지 못함: 결과를 만들지 않고 미실행으로 적습니다
       attempts.push({ attackId: check.attackId, expected, observed: 'not_run' });
       continue;

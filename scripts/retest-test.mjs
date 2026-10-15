@@ -188,9 +188,18 @@ const rowBy = (report, text) => report.rows.find((r) => r.request.includes(text)
   const withServer = async (server) => {
     const original = globalThis.fetch;
     globalThis.fetch = server.impl;
-    try { return await runAttackChecks(CONFIG); } finally { globalThis.fetch = original; }
+    try { return await runAttackChecks({ ...CONFIG, liveChecks: true }); } finally { globalThis.fetch = original; }
   };
 
+  {
+    const server = fakeServer();
+    const original = globalThis.fetch;
+    globalThis.fetch = server.impl;
+    let def;
+    try { def = await runAttackChecks(CONFIG); } finally { globalThis.fetch = original; }
+    check('기본값(liveChecks 없음)은 요청을 하나도 보내지 않고 모든 점검을 not_run으로 적음',
+      server.calls.length === 0 && def.length > 0 && def.every((x) => x.observed === 'not_run'));
+  }
   check('점검 모듈에 import·node: 내장 모듈·require가 없음(격리 실행기에서도 불러올 수 있게)',
     !/^s*import[ (]/m.test(source) && !source.includes('node:') && !source.includes('require('));
 
