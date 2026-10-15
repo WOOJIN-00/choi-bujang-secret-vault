@@ -386,3 +386,16 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 **다시 실행하는 방법:** `npm run xdr:run -- web-injection` → `xdr/web-injection/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/web-injection/respond.mjs`.
 
 **작성 시점 로컬 확인(가상 경보 26건):** counts `block 8 / alert 9 / record 9`, 정상 이벤트(T1190 아님) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
+
+## 보너스 xdr-03 현재 상태 (알려진 취약점 악용 탐지)
+
+`xdr/known-cve/`에 Wazuh 경보(CVE-2021-44228 형태 요청, MITRE ATT&CK T1190) 기반 알려진 취약점 악용 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
+
+- `patterns.json` — 근거(CVE-2021-44228·T1190) 있는 패턴 3종: 요청 머리글의 원격 조회 구문, 요청 인자의 원격 조회 구문, 취약점 점검 흔적과 조회 구문이 함께. 패턴마다 "단어만 있는 경우"(`notMatch`)를 따로 적었고, 구문 예시는 적지 않았습니다.
+- `decide.mjs` — 패턴을 상수로 담고 `decide(alert) → { action: block|alert|record, confidence, reason }`. 임계값 0.85 block / 0.5 alert / 그 아래 record. import·파일 I/O·네트워크 없이 경보 하나로 혼자 판단. 완전한 조회 구문이 실제로 있을 때만 block이고, 단어·조각만 있으면 alert(0.85 미만)입니다.
+- `respond.mjs` — block 후보만 골라 출발 주소(srcip) 기준 거부 규칙(만료 시각·근거 경보 번호 포함)으로 내보내고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓음(`module=known-cve`). 정상 사용자가 함께 쓴 주소에는 규칙을 넣지 않음. 규칙은 목록으로만 돌려주며 판정기에 직접 걸리지는 않습니다.
+- `read-alerts.mjs` — 경보 확인용(판정기·decide가 import 하지 않음). 시각·출발 주소·계정·수준·설명만 뽑고 `url`·머리글 값은 뽑지 않습니다.
+
+**다시 실행하는 방법:** `npm run xdr:run -- known-cve` → `xdr/known-cve/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/known-cve/respond.mjs`, 경보 확인은 `node xdr/known-cve/read-alerts.mjs`.
+
+**작성 시점 로컬 확인(가상 경보 24건):** counts `block 8 / alert 8 / record 8`, 정상 이벤트(T1190 아님) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
