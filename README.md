@@ -327,11 +327,11 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 - **수치와 서버 기록이 맞는지 화면이 다시 셉니다.** 판정기 일치 건수, 탐지 사건 합계, 회수 제안 수, 서버 기록 표시 건수를 목록에서 다시 세어 비교하고, 어긋나면 "불일치"를 보여 줍니다.
 
 ### 제출 묶음의 점검 기록 (`src/attack-check.mjs`)
-`npm run bundle`이 만드는 `attackAttempts`는 위 재시험 표(제작 2)의 **실행 기록에서 만듭니다.** 점검 목록을 따로 쓰지 않아 표와 제출 묶음이 같은 요청을 가리킵니다.
-- **실제로 보낸 요청**: `observed`에 결과·판정(기대와 같음/다름)·**요청 ID·서버 ID·확인 시각**을 적습니다. 기대와 다르면 숨기지 않고 `기대와 다름(실패)`로 적습니다.
-- **보내지 않은 점검**(계정 환경변수 없음, 자료를 바꾸는 요청, 네트워크 오류): `observed`를 정확히 `not_run`으로 적고 결과를 만들어 채우지 않습니다.
-- 공격 ID 11개: `anonymous_note_read`(무인증 메모 조회), `cross_owner_note_read`(B가 A의 메모 조회), `anonymous_notes_api`, `forged_token_notes`, `direct_original_api`, `restore_without_login`, `restore_wrong_method`, `device_status_without_login`, `device_request_without_login`, `cross_owner_list_mix`, `cross_owner_note_write`. 무인증 조회와 타인 메모 조회가 앞에 옵니다.
-- **A·B 시험 계정 환경변수를 넣고 `npm run bundle`을 실행해야 `cross_owner_*`가 실제 요청으로 남습니다.** 넣지 않으면 그 점검들은 `not_run`입니다. `cross_owner_note_write`(타인 메모 수정·삭제)는 거부되지 않으면 자료가 바뀌므로 어떤 경우에도 자동으로 보내지 않아 항상 `not_run`입니다.
+`npm run bundle`이 만드는 `attackAttempts`는 `src/attack-check.mjs`가 **배포 주소로 실제 요청을 보내** 만듭니다. 이 파일은 **`import`를 하나도 쓰지 않고 전역 `fetch`만 씁니다.** 한때 재시험 표 코드를 불러다 쓰게 했더니 심판 실행기에서 `npm run bundle`이 `runner_import_failed`로 멈췄습니다. 점검 파일 하나만 읽을 수 있는 격리 환경을 모사해 보면, 시작 틀과 지금 파일은 불러와지고 이전 파일은 `ERR_ACCESS_DENIED`로 실패했습니다(모사이며 심판 환경을 직접 확인한 것은 아닙니다).
+- **실제로 보낸 요청**: `observed`에 **실제로 받은 HTTP 상태**를 먼저 적고, 판정(기대와 같음/다름)·요청 ID·확인 시각을 붙입니다. 기대와 다르면 숨기지 않고 `기대와 다름(실패)`로 적습니다. 요청마다 `X-Attack-Id` 헤더에 공격 ID를 싣습니다.
+- **보내지 않은 점검**(시험 계정이 필요한 타인 메모 조회, 자료를 바꾸는 요청, 응답을 받지 못한 요청): `observed`를 정확히 `not_run`으로 적고 결과를 만들어 채우지 않습니다.
+- 공격 ID 10개 중 7개를 보냅니다: `anonymous_note_read`(무인증 메모 조회), `anonymous_notes_api`, `forged_token_notes`, `restore_without_login`, `restore_wrong_method`, `device_status_without_login`, `device_request_without_login`. 나머지 3개(`cross_owner_note_read`, `cross_owner_list_mix`, `cross_owner_note_write`)는 이 점검에서 항상 `not_run`입니다. 타인 메모 조회는 시험 계정 두 개가 필요하고, 수정·삭제는 거부되지 않으면 자료가 바뀌기 때문입니다. 무인증 조회와 타인 메모 조회가 앞에 옵니다.
+- **A·B 시험 계정으로 타인 메모 조회를 실측하는 곳은 `npm run retest`입니다**(표의 `cross_owner_*` 행). 이 점검은 계정을 쓰지 않고, 외부 주소로 나가는 원본 직접 요청도 보내지 않습니다(그 행은 재시험 표에만 있습니다).
 - 이 기록은 학생의 자기 점검이며 심판의 판정이 아닙니다.
 
 **다시 실행하는 방법(12단계 제작 1 확인 순서):**

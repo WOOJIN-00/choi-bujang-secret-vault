@@ -1,37 +1,69 @@
 // The student changes this check as each stage adds an attack to the same app.
 // Never return tokens, private keys, real names, or note bodies.
 //
-// 12단계: 제출 묶음의 점검은 재시험 표(scripts/retest-lib.mjs)의 '실행 기록'에서 만듭니다.
-//   - 실제로 보낸 요청: 결과와 함께 요청 ID·서버 ID·확인 시각을 observed에 적습니다(통과가 아니면 '실패'로 적음).
-//   - 보내지 않은 점검(계정 없음, 자료를 바꾸는 요청, 네트워크 오류): observed를 정확히 'not_run'으로 적습니다.
-// 값을 만들어 채우지 않습니다. 이 점검은 학생의 자기 점검이며 심판의 판정이 아닙니다.
-import { EVIDENCE, RESULT, runRetest } from '../scripts/retest-lib.mjs';
+// 12단계: 이 파일은 import를 하나도 쓰지 않고 전역 fetch·URL·crypto만 씁니다.
+//   심판 실행기가 점검 파일 하나만 읽을 수 있는 격리 환경에서 불러와도 동작하게 하려는 것입니다.
+//   (이전에 재시험 표 코드를 import했을 때 runner_import_failed로 bundle이 멈췄습니다.)
+// 실제로 보낸 요청은 observed에 '실제로 받은 HTTP 상태'를 먼저 적고 요청 ID·확인 시각을 붙입니다.
+// 요청을 보내지 못했거나 보내지 않은 점검은 observed를 정확히 'not_run'으로 적고 결과를 만들지 않습니다.
+// 이 점검은 학생의 자기 점검이며 심판의 판정이 아닙니다.
 
 const LIMIT = 300; // scripts/bundle.mjs가 expected·observed에 허용하는 최대 길이
 const cut = (text) => (text.length > LIMIT ? `${text.slice(0, LIMIT - 1)}…` : text);
+const FORGED_TOKEN = 'aaaaaaaaaa.bbbbbbbbbb.cccccccccc'; // 형식만 갖춘 가짜 토큰(실제 토큰 아님)
 
+// 점검 목록. send가 없으면 요청을 보내지 않고 not_run으로 둡니다(이유는 expected 설명에 적음).
 // 무인증 조회와 타인 메모 조회를 앞에 두고, 나머지는 단계 순서를 따릅니다.
-const FIRST = ['anonymous_note_read', 'cross_owner_note_read'];
+const CHECKS = [
+  { attackId: 'anonymous_note_read', request: 'GET /data.json (로그인 없음)', want: '200 · notes 비어 있음',
+    send: { path: '/data.json' },
+    judge: (r) => ({ ok: r.status === 200 && Array.isArray(r.json?.notes) && r.json.notes.length === 0,
+      detail: `notes ${Array.isArray(r.json?.notes) ? r.json.notes.length : '?'}건` }) },
+  { attackId: 'cross_owner_note_read', request: 'B가 A의 메모 조회', want: '404',
+    skip: '시험 계정 두 개가 있어야 보낼 수 있어 이 점검에서는 보내지 않음' },
+  { attackId: 'anonymous_notes_api', request: 'GET /api/notes (로그인 없음)', want: '401',
+    send: { path: '/api/notes' }, judge: (r) => ({ ok: r.status === 401 }) },
+  { attackId: 'forged_token_notes', request: 'GET /api/notes (위조 토큰)', want: '401',
+    send: { path: '/api/notes', token: FORGED_TOKEN }, judge: (r) => ({ ok: r.status === 401 }) },
+  { attackId: 'restore_without_login', request: 'POST /api/restore (로그인 없음)', want: '401',
+    send: { method: 'POST', path: '/api/restore', body: '{}' }, judge: (r) => ({ ok: r.status === 401 }) },
+  { attackId: 'restore_wrong_method', request: 'DELETE /api/restore', want: '405',
+    send: { method: 'DELETE', path: '/api/restore' }, judge: (r) => ({ ok: r.status === 405 }) },
+  { attackId: 'device_status_without_login', request: 'GET /api/device (로그인 없음)', want: '401',
+    send: { path: '/api/device' }, judge: (r) => ({ ok: r.status === 401 }) },
+  { attackId: 'device_request_without_login', request: 'POST /api/device (로그인 없음)', want: '401',
+    send: { method: 'POST', path: '/api/device', body: '{}' }, judge: (r) => ({ ok: r.status === 401 }) },
+  { attackId: 'cross_owner_list_mix', request: 'B의 목록에 A의 메모가 섞였는지', want: 'A의 메모 0건',
+    skip: '시험 계정 두 개가 있어야 보낼 수 있어 이 점검에서는 보내지 않음' },
+  { attackId: 'cross_owner_note_write', request: 'B가 A의 메모 수정·삭제', want: '404',
+    skip: '거부되지 않으면 실제로 자료가 바뀌는 요청이라 보내지 않음' },
+];
 
-// 재시험 표의 행에서 제출 점검을 만듭니다(순수 함수: 시험에서 가짜 표로도 실행).
-export function attemptsFromReport(report) {
-  const rows = report.rows.filter((row) => typeof row.attackId === 'string' && row.attackId);
-  const rank = (row) => {
-    const i = FIRST.indexOf(row.attackId);
-    return i === -1 ? FIRST.length : i;
-  };
-  const ordered = [...rows].sort((a, b) => rank(a) - rank(b) || a.no - b.no);
-  return ordered.map((row) => {
-    const sent = row.evidence === EVIDENCE.LIVE; // 실제 HTTP 요청을 보낸 행만 결과를 적습니다
-    const verdict = row.result === RESULT.PASS ? '기대와 같음' : '기대와 다름(실패)';
-    return {
-      attackId: row.attackId,
-      expected: cut(`${row.request} → 기대 ${row.expected}`),
-      observed: sent
-        ? cut(`${row.actual} · ${verdict} · 요청 ID ${row.requestId} · 서버 ID ${row.serverId} · 확인 시각 ${row.at}`)
-        : 'not_run',
-    };
-  });
+// 요청 한 건. 전역 fetch만 씁니다. 응답을 받지 못하면 null(= 보낸 요청의 결과가 없으므로 not_run).
+async function probe(app, check) {
+  const requestId = globalThis.crypto.randomUUID();
+  const at = new Date().toISOString();
+  const { method = 'GET', path, token, body } = check.send;
+  try {
+    const response = await fetch(new URL(path, app), {
+      method,
+      headers: {
+        'X-Request-Id': requestId,
+        'X-Attack-Id': check.attackId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10000),
+    });
+    const text = await response.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* JSON이 아닌 응답 */ }
+    return { status: response.status, json, requestId, at };
+  } catch {
+    return null;
+  }
 }
 
 export async function runAttackChecks(config) {
@@ -49,7 +81,22 @@ export async function runAttackChecks(config) {
     throw new Error('aleph.config.json의 실제 배포 주소를 먼저 넣어 주세요.');
   }
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
-  // 시험 계정은 실행하는 터미널의 환경변수로만 받습니다(없으면 계정이 필요한 점검은 not_run).
-  const report = await runRetest({ base: config.publicAppUrl, env: process.env });
-  return attemptsFromReport(report);
+
+  const attempts = [];
+  for (const check of CHECKS) {
+    const expected = cut(`${check.request} → 기대 ${check.want}${check.skip ? ` (${check.skip})` : ''}`);
+    const result = check.send ? await probe(app, check) : null;
+    if (!result) { // 보내지 않았거나 응답을 받지 못함: 결과를 만들지 않고 미실행으로 적습니다
+      attempts.push({ attackId: check.attackId, expected, observed: 'not_run' });
+      continue;
+    }
+    const verdict = check.judge(result);
+    const code = result.json && typeof result.json.error === 'string' ? ` ${result.json.error}` : '';
+    attempts.push({
+      attackId: check.attackId,
+      expected,
+      observed: cut(`HTTP ${result.status}${code}${verdict.detail ? ` · ${verdict.detail}` : ''} · ${verdict.ok ? '기대와 같음' : '기대와 다름(실패)'} · 요청 ID ${result.requestId} · 확인 시각 ${result.at}`),
+    });
+  }
+  return attempts;
 }

@@ -32,7 +32,7 @@ function fakeServer(options = {}) {
     const u = new URL(url);
     const method = init.method ?? 'GET';
     const auth = init.headers?.Authorization ?? '';
-    calls.push({ method, path: u.pathname, auth });
+    calls.push({ method, path: u.pathname, auth, attackId: init.headers?.['X-Attack-Id'] ?? null });
     if (networkDown) throw Object.assign(new Error('down'), { name: 'TypeError' });
     if (u.origin === SUPA && u.pathname === '/auth/v1/token') {
       const body = JSON.parse(init.body);
@@ -171,9 +171,12 @@ const rowBy = (report, text) => report.rows.find((r) => r.request.includes(text)
     rowBy(report, 'A가 자기 메모')?.result === 'not_run' && rowBy(report, 'A GET /api/notes (미승인')?.result === 'pass');
 }
 
-// 7) 제출 묶음 점검(attackAttempts)은 표의 실행 기록에서 만들고, 보내지 않은 점검은 정확히 not_run
+// 7) 제출 묶음 점검(src/attack-check.mjs): import 없이 전역 fetch만 쓰고, 보낸 요청은 실제 HTTP 상태, 안 보낸 점검은 정확히 not_run
 {
-  const { attemptsFromReport } = await import('../src/attack-check.mjs');
+  const { runAttackChecks } = await import('../src/attack-check.mjs');
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/attack-check.mjs', import.meta.url), 'utf8');
+  const CONFIG = { step: 12, publicAppUrl: BASE + '/', sampleMarker: 'SAMPLE_NOTE_1' };
   const ID_FORMAT = /^[a-z0-9][a-z0-9_.-]{0,79}$/iu;
   const shapeOk = (list) => Array.isArray(list) && list.length >= 1 && list.length <= 20
     && list.every((a) => Object.keys(a).sort().join(',') === 'attackId,expected,observed'
@@ -181,38 +184,42 @@ const rowBy = (report, text) => report.rows.find((r) => r.request.includes(text)
       && a.observed.trim() && a.observed.length <= 300)
     && new Set(list.map((a) => a.attackId)).size === list.length;
 
-  // 계정이 있는 정상 서버: 모두 실제 요청이므로 요청 ID·확인 시각이 observed에 있음
-  const withAccounts = attemptsFromReport(await run(fakeServer(), ENV));
-  check('점검 목록이 묶음 형식(키 3개·길이·중복 없음·1~20개)을 지킴', shapeOk(withAccounts));
+  // 점검은 전역 fetch를 직접 쓰므로, 가짜 서버를 전역 fetch로 잠시 바꿔 실행합니다.
+  const withServer = async (server) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = server.impl;
+    try { return await runAttackChecks(CONFIG); } finally { globalThis.fetch = original; }
+  };
+
+  check('점검 모듈에 import·node: 내장 모듈·require가 없음(격리 실행기에서도 불러올 수 있게)',
+    !/^s*import[ (]/m.test(source) && !source.includes('node:') && !source.includes('require('));
+
+  const okServer = fakeServer();
+  const ok = await withServer(okServer);
+  check('점검 목록이 묶음 형식(키 3개·길이·중복 없음·1~20개)을 지킴', shapeOk(ok));
   check('무인증 조회가 첫 번째, 타인 메모 조회가 두 번째(같은 제출본에 연속)',
-    withAccounts[0]?.attackId === 'anonymous_note_read' && withAccounts[1]?.attackId === 'cross_owner_note_read');
-  const sentOnes = withAccounts.filter((a) => a.observed !== 'not_run');
-  check('실제로 보낸 점검은 요청 ID(UUID)와 확인 시각이 observed에 있음',
-    sentOnes.length > 0 && sentOnes.every((a) => /요청 ID [0-9a-f-]{36}/.test(a.observed) && /확인 시각 \d{4}-\d{2}-\d{2}T/.test(a.observed)));
-  check('자료를 바꾸는 점검(타인 메모 PUT·DELETE)은 요청을 보내지 않았으므로 observed가 정확히 not_run',
-    withAccounts.find((a) => a.attackId === 'cross_owner_note_write')?.observed === 'not_run');
+    ok[0]?.attackId === 'anonymous_note_read' && ok[1]?.attackId === 'cross_owner_note_read');
+  const sent = ok.filter((a) => a.observed !== 'not_run');
+  check('보낸 점검은 observed가 실제 HTTP 상태로 시작하고 요청 ID(UUID)·확인 시각이 있음',
+    sent.length > 0 && sent.every((a) => /^HTTP \d{3}/.test(a.observed) && /요청 ID [0-9a-f-]{36}/.test(a.observed) && /확인 시각 \d{4}-\d{2}-\d{2}T/.test(a.observed)));
+  check('타인 메모 조회와 자료를 바꾸는 점검은 보내지 않아 observed가 정확히 not_run',
+    ['cross_owner_note_read', 'cross_owner_list_mix', 'cross_owner_note_write'].every((id) => ok.find((a) => a.attackId === id)?.observed === 'not_run'));
+  check('요청마다 X-Attack-Id 헤더에 공격 ID가 실려 감(점검과 요청을 짝지을 수 있음)',
+    okServer.calls.filter((c) => c.attackId).length === sent.length && sent.every((a) => okServer.calls.some((c) => c.attackId === a.attackId)));
+  check('보낸 요청은 읽기와 무인증 거부 확인뿐(로그인 헤더는 위조 토큰 하나)',
+    okServer.calls.every((c) => !c.auth || c.auth === 'Bearer aaaaaaaaaa.bbbbbbbbbb.cccccccccc'));
 
-  // 계정이 없으면 타인 메모 조회는 보내지 못한 것이므로 not_run(결과를 만들어 채우지 않음)
-  const noAccounts = attemptsFromReport(await run(fakeServer(), {}));
-  check('계정이 없으면 타인 메모 조회(cross_owner_*)는 observed가 정확히 not_run',
-    ['cross_owner_note_read', 'cross_owner_list_mix'].every((id) => noAccounts.find((a) => a.attackId === id)?.observed === 'not_run'));
-  check('계정이 없어도 무인증 조회는 실제 요청 기록이 남음',
-    /요청 ID/.test(noAccounts.find((a) => a.attackId === 'anonymous_note_read')?.observed ?? ''));
-  check('계정 없음에서도 묶음 형식을 지킴', shapeOk(noAccounts));
+  // 거부돼야 할 요청이 허용되면 observed에 실패와 실제 상태가 그대로 적힘
+  const leaky = await withServer(fakeServer({ anonNotes200: true }));
+  const leakedRow = leaky.find((a) => a.attackId === 'anonymous_notes_api')?.observed ?? '';
+  check('거부돼야 할 요청이 허용되면 observed에 실제 HTTP 200과 실패가 적힘', /^HTTP 200/.test(leakedRow) && /기대와 다름\(실패\)/.test(leakedRow));
 
-  // 거부돼야 할 요청이 허용되면 observed에 '실패'가 그대로 적힘(숨기지 않음)
-  const leaky = attemptsFromReport(await run(fakeServer({ anonNotes200: true }), ENV));
-  check('거부돼야 할 요청이 허용되면 observed에 실패가 적힘',
-    /기대와 다름\(실패\)/.test(leaky.find((a) => a.attackId === 'anonymous_notes_api')?.observed ?? ''));
+  // 네트워크가 끊기면 보낸 요청의 결과가 없으므로 전부 not_run
+  const down = await withServer(fakeServer({ networkDown: true }));
+  check('네트워크 끊김: 모든 점검이 not_run이고 결과를 만들지 않음', down.length > 0 && down.every((a) => a.observed === 'not_run') && shapeOk(down));
 
-  // 네트워크가 끊기면 보낸 요청이 없으므로 전부 not_run
-  const down = attemptsFromReport(await run(fakeServer({ networkDown: true }), ENV));
-  check('네트워크 끊김: 모든 점검이 not_run이고 결과를 만들지 않음', down.length > 0 && down.every((a) => a.observed === 'not_run'));
-
-  // 비밀값 비노출
-  const all = JSON.stringify([withAccounts, noAccounts, leaky]);
   check('점검 목록에 토큰·비밀번호·공개 키·이메일이 없음',
-    ![TOKEN_A, TOKEN_B, PASS_A, PASS_B, 'sb_publishable_FAKEKEY', 'a@example.test', 'b@example.test'].some((s) => all.includes(s)));
+    ![TOKEN_A, TOKEN_B, PASS_A, PASS_B, 'sb_publishable_FAKEKEY', 'a@example.test', 'b@example.test'].some((t) => JSON.stringify([ok, leaky, down]).includes(t)));
 }
 
 check('설정의 원본 자료 API 주소와 공개 앱 주소가 비어 있지 않음', typeof aleph.originalApiUrl === 'string' && typeof aleph.publicAppUrl === 'string');
