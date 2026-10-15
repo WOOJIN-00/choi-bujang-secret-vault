@@ -425,3 +425,16 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 **다시 실행하는 방법:** `npm run xdr:run -- privilege` → `xdr/privilege/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/privilege/respond.mjs`, 경보 확인은 `node xdr/privilege/read-alerts.mjs`.
 
 **작성 시점 로컬 확인(가상 경보 26건):** counts `block 9 / alert 8 / record 9`, 정상 이벤트(pv-18~26) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 판정은 경보 설명의 한국어 문장에 기대고 있어, 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
+
+## 보너스 xdr-06 현재 상태 (자료 빼돌리기 탐지)
+
+`xdr/exfiltration/`에 Wazuh 경보(MITRE ATT&CK T1041 명령 통로로 유출, T1048 다른 프로토콜로 유출) 기반 자료 빼돌리기 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**. 이 모듈로 xdr 보너스 여섯 항목(brute-force·web-injection·known-cve·persistence·privilege·exfiltration)의 코드가 모두 만들어졌습니다.
+
+- `patterns.json` — 근거(T1041·T1048) 있는 패턴 5종: 처음 보는 목적지로 대용량 전송, 업무 시간 밖 압축 파일 반출, 같은 목적지로 대용량 전송 반복, 명령 통로로 큰 자료 전송, 평소 쓰지 않던 포트로 자료 전송. 목적지 주소·전송량 값은 적지 않았습니다.
+- `decide.mjs` — 패턴을 상수로 담고 `decide(alert) → { action: block|alert|record, confidence, reason }`. 임계값 0.85 block / 0.5 alert / 그 아래 record. import·파일 I/O·네트워크 없이 경보 하나로 혼자 판단. 설명 문장과 `data`의 전송량(`bytes`)·파일 수(`files`)·반복 횟수(`count`)를 함께 보며, 위험 신호(처음 보는 목적지·대용량(50MB·50건 이상)·업무 시간 밖·압축 파일·반복·명령 통로·낯선 포트 등)가 2점 이상 겹칠 때만 block입니다. 신호가 하나뿐이거나 없으면 alert(0.85 미만), 작은 동기화·읽기 같은 정상 표지가 있으면 record입니다. "전송은 아직 없습니다"·"실패"·"큰 파일은 아닙니다" 같은 부정문은 신호로 세지 않습니다.
+- `respond.mjs` — block 후보만 골라 **출발 주소(srcip)** 기준 거부 규칙(만료 시각·근거 경보 번호 포함)으로 내보내고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓음(`module=exfiltration`). 계정이나 목적지는 막지 않고(목적지는 정상 서비스일 수 있음), 알림에도 목적지·전송량을 적지 않으며, 정상 사용자가 함께 쓴 주소에는 규칙을 넣지 않음. 규칙은 목록으로만 돌려주며 판정기에 직접 걸리지는 않습니다. 이 규칙은 **다음 전송을 막는 것**이고 이미 나간 자료를 되돌리지는 못합니다.
+- `read-alerts.mjs` — 경보 확인용(판정기·decide가 import 하지 않음). 시각·출발 주소·계정·수준·설명만 뽑고 `dstip`·`bytes`·`files`·`count`는 뽑지 않습니다.
+
+**다시 실행하는 방법:** `npm run xdr:run -- exfiltration` → `xdr/exfiltration/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/exfiltration/respond.mjs`, 경보 확인은 `node xdr/exfiltration/read-alerts.mjs`.
+
+**작성 시점 로컬 확인(가상 경보 30건):** counts `block 10 / alert 10 / record 10`, 정상 이벤트(ex-21~30) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 판정은 경보 설명의 한국어 문장과 제가 정한 기준값(50MB·50건)에 기대고 있어, 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
