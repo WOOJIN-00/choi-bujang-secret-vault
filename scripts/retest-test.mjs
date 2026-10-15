@@ -204,6 +204,9 @@ const rowBy = (report, text) => report.rows.find((r) => r.request.includes(text)
     sent.length > 0 && sent.every((a) => /^HTTP \d{3}/.test(a.observed) && /요청 ID [0-9a-f-]{36}/.test(a.observed) && /확인 시각 \d{4}-\d{2}-\d{2}T/.test(a.observed)));
   check('타인 메모 조회와 자료를 바꾸는 점검은 보내지 않아 observed가 정확히 not_run',
     ['cross_owner_note_read', 'cross_owner_list_mix', 'cross_owner_note_write'].every((id) => ok.find((a) => a.attackId === id)?.observed === 'not_run'));
+  check('제출 묶음의 점검은 GET만 보냄(POST·PUT·DELETE 등 쓰기 요청 없음)',
+    okServer.calls.filter((c) => c.attackId).every((c) => c.method === 'GET' || c.method === 'HEAD')
+    && ['restore_without_login', 'restore_wrong_method', 'device_request_without_login'].every((id) => ok.find((x) => x.attackId === id)?.observed === 'not_run'));
   check('요청마다 X-Attack-Id 헤더에 공격 ID가 실려 감(점검과 요청을 짝지을 수 있음)',
     okServer.calls.filter((c) => c.attackId).length === sent.length && sent.every((a) => okServer.calls.some((c) => c.attackId === a.attackId)));
   check('보낸 요청은 읽기와 무인증 거부 확인뿐(로그인 헤더는 위조 토큰 하나)',
