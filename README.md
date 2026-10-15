@@ -412,3 +412,16 @@ Supabase에 넣은 메모 본문 문구가 공개 위치에 남아 있는지 검
 **다시 실행하는 방법:** `npm run xdr:run -- persistence` → `xdr/persistence/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/persistence/respond.mjs`, 경보 확인은 `node xdr/persistence/read-alerts.mjs`.
 
 **작성 시점 로컬 확인(가상 경보 24건):** counts `block 8 / alert 8 / record 8`, 정상 이벤트(ps-17~24) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 판정은 경보 설명의 한국어 문장에 기대고 있어, 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
+
+## 보너스 xdr-05 현재 상태 (권한 가로채기 탐지)
+
+`xdr/privilege/`에 Wazuh 경보(MITRE ATT&CK T1068 권한 상승, T1078 정상 계정 도용) 기반 권한 가로채기 탐지를 넣었습니다. `src/decider.mjs`와 `src/detect.mjs`는 **건드리지 않았습니다**.
+
+- `patterns.json` — 근거(T1068·T1078) 있는 패턴 4종: 평범한 계정이 관리자 그룹에 추가, 처음 보는 주소·계정에서 관리자 명령, 업무 시간 밖 권한 사용, 권한이 오른 직후 관리자 명령. 관리자 그룹 추가의 정식 기법 번호는 T1098이지만 경보 묶음이 T1078로 표시한 것을 따랐고 근거 줄에 밝혔습니다. 수업용 관리 계정이 평소 주소에서 평소처럼 쓰는 것은 패턴이 아닙니다.
+- `decide.mjs` — 패턴을 상수로 담고 `decide(alert) → { action: block|alert|record, confidence, reason }`. 임계값 0.85 block / 0.5 alert / 그 아래 record. import·파일 I/O·네트워크 없이 경보 하나로 혼자 판단. 권한 관련 이벤트에 위험 신호(관리자 그룹 추가·관리자 명령·낯선 주소·업무 시간 밖·다른 계정의 권한 등)가 2점 이상 겹칠 때만 block이고, 신호가 하나뿐이거나 없으면 alert(0.85 미만), 로그인·읽기 같은 정상 표지가 있으면 record입니다. "명령은 없습니다"·"실패"·"취소" 같은 부정문은 신호로 세지 않습니다.
+- `respond.mjs` — block 후보만 골라 출발 주소(srcip) 기준 거부 규칙(만료 시각·근거 경보 번호 포함)으로 내보내고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓음(`module=privilege`). 이 경보 묶음은 공격 경보에도 정상 계정 이름이 나오므로 계정·그룹이 아니라 주소만 막고, 정상 사용자가 함께 쓴 주소에는 규칙을 넣지 않음. 규칙은 목록으로만 돌려주며 판정기에 직접 걸리지는 않습니다.
+- `read-alerts.mjs` — 경보 확인용(판정기·decide가 import 하지 않음). 시각·출발 주소·계정·수준·설명만 뽑고 `data.group`·`count`는 뽑지 않습니다.
+
+**다시 실행하는 방법:** `npm run xdr:run -- privilege` → `xdr/privilege/result.json` 생성(`scripts/xdr-run.mjs`가 `decide`를 경보마다 호출). 대응 연결 확인은 `node xdr/privilege/respond.mjs`, 경보 확인은 `node xdr/privilege/read-alerts.mjs`.
+
+**작성 시점 로컬 확인(가상 경보 26건):** counts `block 9 / alert 8 / record 9`, 정상 이벤트(pv-18~26) block 0건. 이는 로컬 가상 경보 연습 결과이며 반 엔진·운영 심판의 판정이 아닙니다. 판정은 경보 설명의 한국어 문장에 기대고 있어, 심판의 숨은 경보는 시험하지 않았습니다. `result.json`과 `alerts.log`는 생성 산출물이라 Git에서 제외합니다.
